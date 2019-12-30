@@ -18,6 +18,7 @@ create or replace PROCEDURE        sp_l_air_tickets (fileToProcess VARCHAR2) AUT
 -- 09-Dec-19     1.7 TWilson  Revised EMD data processing
 -- 16-Dec-19     1.8 TWilson  Deployment bug fixes
 -- 20-Dec-19     1.9 TWilson  Processing for reissued tickets 
+-- 30-Dec-19     2.0 TWilson  Processing for reissued tickets, second attempt
 --
 -- @"I:\MI\Data Warehouse\Tim\MI-2672\SP_L_AIR_TICKETS_1.1.prc";
 --
@@ -60,7 +61,7 @@ v_selling_fare_amt        ticket.selling_fare_amt%TYPE:=0;
 v_remaining_tax_amt       ticket.remaining_tax_amt%TYPE:=0;
 v_commission_pct          ticket.commission_pct%TYPE:=0;
 v_commission_amt          ticket.commission_amt%TYPE:=0;
-v_collection_amt          ticket.published_fare_amt%TYPE:=0;
+v_collection_amt          ticket.selling_fare_amt%TYPE:=0;
 v_ccy_code                ticket.ccy_code%TYPE;
 v_pseudocitycode          ticket.pseudo_city_code%TYPE;
 v_departure_date          ticket.departure_date%TYPE;
@@ -114,6 +115,7 @@ v_endfile_found           NUMBER:=0;
 v_error_message           VARCHAR2(512);
 v_exchange_found          NUMBER:=0;
 v_exch_ticket_no          ticket.ticket_no%TYPE;
+v_extracted_amt           ticket.selling_fare_amt%TYPE:=0;
 v_first_depdate           BOOLEAN:=False;
 v_fo_record               VARCHAR2(100);
 v_fpo_found               NUMBER:=0;
@@ -252,7 +254,7 @@ dbms_output.put_line(TO_CHAR(SYSDATE, 'DD-MON-YYYY HH:MM:SS') || ' Start Of File
 
 /*
 * This code is added here so that when reading through fare
-* records (K-R, K-Y, etc.), check can be done to match on
+* lines (K-R, K-Y, etc.), check can be done to match on
 * additional fare Form of Payment eg
 * FPO/NONREF+/NONREF
 * FPO/NONREFAGTL1238450+/NONREFAGT/GBP208.00;P2
@@ -261,6 +263,7 @@ dbms_output.put_line(TO_CHAR(SYSDATE, 'DD-MON-YYYY HH:MM:SS') || ' Start Of File
 */
     IF SUBSTR(c1_rec.data_text,1,2) = 'FPO' AND v_exchange_found = 1 THEN
         -- Form of payment data for original issue / exchange / reissue
+		-- There may or may not be a collection amount recorded in this line
         BEGIN
             v_collection_amt := CASE WHEN INSTR(c1_rec.data_text,'/GBP') > 0 
                                       AND INSTR(c1_rec.data_text,';')    > 0 THEN
@@ -386,7 +389,7 @@ dbms_output.put_line(TO_CHAR(SYSDATE, 'DD-MON-YYYY HH:MM:SS') || ' Start Of File
             END;
 
 /*
- * K- record published fare In case of 1) Published
+ * K- line published fare In case of 1) Published
  * fare than K-F amt = P.F = S.F calculate
  * commission 2) Nett Remitt than K-F amt = P.F. and
  * KN-F amt = S.F 3) BT/IT K.I or K-B amt = S.F and
@@ -409,103 +412,156 @@ dbms_output.put_line(TO_CHAR(SYSDATE, 'DD-MON-YYYY HH:MM:SS') || ' Start Of File
 */
         ELSIF SUBSTR(c1_rec.data_text,1,2) = 'K-' OR SUBSTR(c1_rec.data_text,1,3) = 'KN-' OR SUBSTR(c1_rec.data_text,1,3) = 'KS-' THEN
             -- Base, total, net and selling fare data
-            v_locator := 'K-';
-            IF SUBSTR(c1_rec.data_text,1,2) = 'K-' AND INSTR(c1_rec.data_text,';',1,12)+1 > 12 THEN
-                v_ccy_code := SUBSTR(c1_rec.data_text,INSTR(c1_rec.data_text,';',1,12)+1,3);
-            END IF;
+			IF v_fpo_found = 0 THEN
+			    -- Not a reissue (this is all of the original code for K-/KN-/KS- from v1.9 but in v2.0 some conditions may now be redundant
+				-- See 'Reissue (new code for v2.0)' below
+				v_locator := 'K-0';
+				IF SUBSTR(c1_rec.data_text,1,2) = 'K-' AND INSTR(c1_rec.data_text,';',1,12)+1 > 12 THEN
+					v_ccy_code := SUBSTR(c1_rec.data_text,INSTR(c1_rec.data_text,';',1,12)+1,3);
+				END IF;
 
-            IF SUBSTR(c1_rec.data_text,1,3) = 'K-F' THEN
-                v_published_fare_amt := FN_POPULATEFARE(SUBSTR(c1_rec.data_text,1,3),c1_rec.data_text);  
-                v_selling_fare_amt := v_published_fare_amt;
-            ELSIF SUBSTR(c1_rec.data_text,1,4) = 'KN-F' THEN
-                v_selling_fare_amt :=  FN_POPULATEFARE(SUBSTR(c1_rec.data_text,1,4),c1_rec.data_text);
-            ELSIF SUBSTR(c1_rec.data_text,1,3) = 'K-I' OR SUBSTR(c1_rec.data_text,1,3) = 'K-B' THEN
-                v_selling_fare_amt := FN_POPULATEFARE(SUBSTR(c1_rec.data_text,1,3),c1_rec.data_text);  
-                v_published_fare_amt := 0;     
-            ELSIF SUBSTR(c1_rec.data_text,1,4) = 'KN-I' OR SUBSTR(c1_rec.data_text,1,4) = 'KN-B' THEN
-                v_selling_fare_amt := FN_POPULATEFARE(SUBSTR(c1_rec.data_text,1,4),c1_rec.data_text);  
-                v_published_fare_amt := 0;     
-/*
- * EXCHANGE / REISSUE TICKET FARE , WHEN THERE
- * IS A ADDITIONAL COLLECTION
- * IMPORTANT NOTES :
- * Additional collection in FPO line and K- line
- * are always represents same amount
- * Additional collection in fare = K- fare amt (
- * at the end of line ) - (sum of all tax
- * changes in KFT- line )
- * In other words , additional collection in
- * fare line (K-) might represent only tax
- * changes
- * so find out if there is any tax changes in
- * KFT- line than deduct that from fare , which
- * is actual fare changes
-*/
-            ELSIF SUBSTR(c1_rec.data_text,1,3) = 'K-R' THEN
-				-- Published fare reissue
-                v_locator := 'K-R';
-                BEGIN
-                    v_pos1 := INSTR(c1_rec.data_text,';',1,12);
-                    v_pos2 := INSTR(c1_rec.data_text,';',1,13);
-                    v_published_fare_amt := TO_NUMBER(REGEXP_REPLACE(SUBSTR(c1_rec.data_text, v_pos1+1, v_pos2-v_pos1-1), '[A-Z]', ''));
-                EXCEPTION
-                WHEN OTHERS THEN 
-                    core_dataw.sp_errors('AIR_TICKET','K-R',SQLCODE,REGEXP_REPLACE(SUBSTR(c1_rec.data_text, v_pos1+1, v_pos2-v_pos1-1), '[A-Z]', '')
-                                               || SQLERRM);
-                    v_published_fare_amt := NULL;                              
-                END;
-                IF v_published_fare_amt IS NOT NULL
-                AND v_published_fare_amt != v_collection_amt  THEN
-                    v_published_fare_amt := 0;
-                END IF;    
-                v_selling_fare_amt := v_published_fare_amt;
-            --
-            ELSIF SUBSTR(c1_rec.data_text,1,4) = 'KN-R' THEN
-			    -- Net remittance reissue
-                v_locator := 'KN-R';
-                BEGIN
-                    v_pos1 := INSTR(c1_rec.data_text,';',1,12);
-                    v_pos2 := INSTR(c1_rec.data_text,';',1,13);
-                    v_selling_fare_amt := TO_NUMBER(REGEXP_REPLACE(SUBSTR(c1_rec.data_text, v_pos1+1, v_pos2-v_pos1-1), '[A-Z]', ''));
-                EXCEPTION
-                WHEN OTHERS THEN 
-                    core_dataw.sp_errors('AIR_TICKET','KN-R',SQLCODE,REGEXP_REPLACE(SUBSTR(c1_rec.data_text, v_pos1+1, v_pos2-v_pos1-1), '[A-Z]', '')
-                                               || SQLERRM);
-                    v_selling_fare_amt := NULL;                              
-                END;
-                IF v_selling_fare_amt IS NOT NULL
-                AND v_selling_fare_amt != v_collection_amt  THEN
-                    v_selling_fare_amt := 0;
-                END IF;    
-            --
-            ELSIF (SUBSTR(c1_rec.data_text,1,3) IN ('K-Y','K-W')  -- BT/IT reissue
-                OR  SUBSTR(c1_rec.data_text,1,4) IN ('KN-Y','KN-W', 'KS-Y','KS-W')) THEN  -- CAT 35 reissue
-                v_locator := 'K-Y';
-                v_published_fare_amt := 0;
-                BEGIN
-                    v_pos12 := INSTR(c1_rec.data_text,';',1,12);
-                    v_pos12n := REGEXP_INSTR(c1_rec.data_text, '[0-9]', v_pos12, 1);
-                    v_pos13 := INSTR(c1_rec.data_text,';',1,13);
-                    v_selling_fare_amt :=  TO_NUMBER(SUBSTR(c1_rec.data_text,    -- from the first numeric after 12th ';' to the position before 13th ';'
-                                               v_pos12n, v_pos13 - v_pos12n)); 
-                EXCEPTION
-                WHEN OTHERS THEN 
-                    core_dataw.sp_errors('AIR_TICKET','K-Y,W;KN-Y,W;KS-Y,W',SQLCODE,
-                        SUBSTR(c1_rec.data_text,    -- from the first numeric after 12th ';' to the position before 13th ';'
-                                               v_pos12n, v_pos13 - v_pos12n)
-                                               || SQLERRM);
-                    v_selling_fare_amt := NULL;                              
-                END;        
-                IF v_selling_fare_amt IS NOT NULL
-                AND v_selling_fare_amt != v_collection_amt  THEN
-                    v_selling_fare_amt := 0;
-                END IF; 
+				IF SUBSTR(c1_rec.data_text,1,3) = 'K-F' THEN
+					v_published_fare_amt := FN_POPULATEFARE(SUBSTR(c1_rec.data_text,1,3),c1_rec.data_text);  
+					v_selling_fare_amt := v_published_fare_amt;
+				ELSIF SUBSTR(c1_rec.data_text,1,4) = 'KN-F' THEN
+					v_selling_fare_amt :=  FN_POPULATEFARE(SUBSTR(c1_rec.data_text,1,4),c1_rec.data_text);
+				ELSIF SUBSTR(c1_rec.data_text,1,3) = 'K-I' OR SUBSTR(c1_rec.data_text,1,3) = 'K-B' THEN
+					v_selling_fare_amt := FN_POPULATEFARE(SUBSTR(c1_rec.data_text,1,3),c1_rec.data_text);  
+					v_published_fare_amt := 0;     
+				ELSIF SUBSTR(c1_rec.data_text,1,4) = 'KN-I' OR SUBSTR(c1_rec.data_text,1,4) = 'KN-B' THEN
+					v_selling_fare_amt := FN_POPULATEFARE(SUBSTR(c1_rec.data_text,1,4),c1_rec.data_text);  
+					v_published_fare_amt := 0;     
+	/*
+	 * EXCHANGE / REISSUE TICKET FARE , WHEN THERE
+	 * IS A ADDITIONAL COLLECTION
+	 * IMPORTANT NOTES :
+	 * Additional collection in FPO line and K- line
+	 * are always represents same amount
+	 * Additional collection in fare = K- fare amt (
+	 * at the end of line ) - (sum of all tax
+	 * changes in KFT- line )
+	 * In other words , additional collection in
+	 * fare line (K-) might represent only tax
+	 * changes
+	 * so find out if there is any tax changes in
+	 * KFT- line than deduct that from fare , which
+	 * is actual fare changes
+	*/
+				ELSIF SUBSTR(c1_rec.data_text,1,3) = 'K-R' THEN
+					-- Published fare reissue
+					v_locator := 'K-R0';
+					BEGIN
+						v_pos1 := INSTR(c1_rec.data_text,';',1,12);
+						v_pos2 := INSTR(c1_rec.data_text,';',1,13);
+						v_published_fare_amt := TO_NUMBER(REGEXP_REPLACE(SUBSTR(c1_rec.data_text, v_pos1+1, v_pos2-v_pos1-1), '[A-Z]', ''));
+					EXCEPTION
+					WHEN OTHERS THEN 
+						core_dataw.sp_errors('AIR_TICKET','K-R',SQLCODE,REGEXP_REPLACE(SUBSTR(c1_rec.data_text, v_pos1+1, v_pos2-v_pos1-1), '[A-Z]', '')
+												   || SQLERRM);
+						v_published_fare_amt := NULL;                              
+					END;
+					IF v_published_fare_amt IS NOT NULL
+					AND v_published_fare_amt != v_collection_amt  THEN
+						v_published_fare_amt := 0;
+					END IF;    
+					v_selling_fare_amt := v_published_fare_amt;
+				--
+				ELSIF SUBSTR(c1_rec.data_text,1,4) = 'KN-R' THEN
+					-- Net remittance reissue
+					v_locator := 'KN-R0';
+					BEGIN
+						v_pos1 := INSTR(c1_rec.data_text,';',1,12);
+						v_pos2 := INSTR(c1_rec.data_text,';',1,13);
+						v_selling_fare_amt := TO_NUMBER(REGEXP_REPLACE(SUBSTR(c1_rec.data_text, v_pos1+1, v_pos2-v_pos1-1), '[A-Z]', ''));
+					EXCEPTION
+					WHEN OTHERS THEN 
+						core_dataw.sp_errors('AIR_TICKET','KN-R',SQLCODE,REGEXP_REPLACE(SUBSTR(c1_rec.data_text, v_pos1+1, v_pos2-v_pos1-1), '[A-Z]', '')
+												   || SQLERRM);
+						v_selling_fare_amt := NULL;                              
+					END;
+					IF v_selling_fare_amt IS NOT NULL
+					AND v_selling_fare_amt != v_collection_amt  THEN
+						v_selling_fare_amt := 0;
+					END IF;    
+				--
+				ELSIF (SUBSTR(c1_rec.data_text,1,3) IN ('K-Y','K-W')  -- BT/IT reissue
+					OR  SUBSTR(c1_rec.data_text,1,4) IN ('KN-Y','KN-W', 'KS-Y','KS-W')) THEN  -- CAT 35 reissue
+					v_locator := 'K-Y0';
+					v_published_fare_amt := 0;
+					BEGIN
+						v_pos12 := INSTR(c1_rec.data_text,';',1,12);
+						v_pos12n := REGEXP_INSTR(c1_rec.data_text, '[0-9]', v_pos12, 1);
+						v_pos13 := INSTR(c1_rec.data_text,';',1,13);
+						v_selling_fare_amt :=  TO_NUMBER(SUBSTR(c1_rec.data_text,    -- from the first numeric after 12th ';' to the position before 13th ';'
+												   v_pos12n, v_pos13 - v_pos12n)); 
+					EXCEPTION
+					WHEN OTHERS THEN 
+						core_dataw.sp_errors('AIR_TICKET','K-Y,W;KN-Y,W;KS-Y,W',SQLCODE,
+							SUBSTR(c1_rec.data_text,    -- from the first numeric after 12th ';' to the position before 13th ';'
+												   v_pos12n, v_pos13 - v_pos12n)
+												   || SQLERRM);
+						v_selling_fare_amt := NULL;                              
+					END;        
+					IF v_selling_fare_amt IS NOT NULL
+					AND v_selling_fare_amt != v_collection_amt  THEN
+						v_selling_fare_amt := 0;
+					END IF; 
 
-            END IF;
+				END IF;
+
+			ELSE
+				-- Reissue (new code for v2.0)
+				v_locator := 'K-1';
+				IF SUBSTR(c1_rec.data_text,1,3) = 'K-R' OR (SUBSTR(c1_rec.data_text,1,3) IN ('K-Y','K-W') OR SUBSTR(c1_rec.data_text,1,4) IN ('KS-Y','KS-W')) THEN
+					IF SUBSTR(c1_rec.data_text,1,3) = 'K-R' THEN
+						-- Published fare reissue
+						v_locator := 'K-R1';
+						BEGIN
+							v_pos1 := INSTR(c1_rec.data_text,';',1,12);
+							v_pos2 := INSTR(c1_rec.data_text,';',1,13);
+							v_extracted_amt := TO_NUMBER(REGEXP_REPLACE(SUBSTR(c1_rec.data_text, v_pos1+1, v_pos2-v_pos1-1), '[A-Z]', ''));
+						EXCEPTION
+						WHEN OTHERS THEN 
+							core_dataw.sp_errors('AIR_TICKET','K-R',SQLCODE,REGEXP_REPLACE(SUBSTR(c1_rec.data_text, v_pos1+1, v_pos2-v_pos1-1), '[A-Z]', '')
+													   || SQLERRM);
+							v_extracted_amt := 0;
+						END;
+
+					ELSIF (SUBSTR(c1_rec.data_text,1,3) IN ('K-Y','K-W')  -- BT/IT reissue
+						OR SUBSTR(c1_rec.data_text,1,4) IN ('KS-Y','KS-W')) THEN  -- CAT 35 reissue
+						v_locator := 'K-Y2';
+						BEGIN
+							v_pos12 := INSTR(c1_rec.data_text,';',1,12);
+							v_pos12n := REGEXP_INSTR(c1_rec.data_text, '[0-9]', v_pos12, 1);
+							v_pos13 := INSTR(c1_rec.data_text,';',1,13);
+							v_extracted_amt :=  TO_NUMBER(SUBSTR(c1_rec.data_text,    -- from the first numeric after 12th ';' to the position before 13th ';'
+													   v_pos12n, v_pos13 - v_pos12n)); 
+						EXCEPTION
+						WHEN OTHERS THEN 
+							core_dataw.sp_errors('AIR_TICKET','K-Y,W;KN-Y,W;KS-Y,W',SQLCODE,
+								SUBSTR(c1_rec.data_text,    -- from the first numeric after 12th ';' to the position before 13th ';'
+													   v_pos12n, v_pos13 - v_pos12n)
+													   || SQLERRM);
+							v_extracted_amt := 0;
+						END;
+						
+					END IF;
+
+                    IF v_collection_amt = v_extracted_amt OR (v_extracted_amt != v_collection_amt AND (v_collection_amt = 0 OR v_collection_amt IS NULL)) THEN
+        			    v_collection_amt := v_extracted_amt;
+                        v_selling_fare_amt := v_collection_amt;
+					ELSE
+			            v_error_message := 'ERROR Collection amount is ' || v_collection_amt || ' but fare amount is ' || v_extracted_amt || ' please check';
+			            RAISE ticket_error;
+					END IF;
+					
+				END IF;
+
+			END IF;
 
         ELSIF SUBSTR(c1_rec.data_text,1,3) = 'KFT' OR SUBSTR(c1_rec.data_text,1,3) = 'KNT' OR SUBSTR(c1_rec.data_text,1,3) = 'KST' THEN
-            v_locator := 'KFT';
-            IF v_exchange_found = 0 THEN
+            v_locator := 'KxT';
+            IF v_exchange_found = 0 AND v_fpo_found = 0 THEN
                 IF NOT v_tax_found THEN
                     v_tax_found := True;
                     v_poscnt := REGEXP_COUNT(c1_rec.data_text, ';');
@@ -541,7 +597,7 @@ dbms_output.put_line(TO_CHAR(SYSDATE, 'DD-MON-YYYY HH:MM:SS') || ' Start Of File
 
                 END IF;
             ELSE
-                IF NOT v_unpaid_tax_found THEN
+                IF NOT v_unpaid_tax_found AND SUBSTR(c1_rec.data_text,1,2) != 'KN' THEN
                     v_poscnt := REGEXP_COUNT(c1_rec.data_text, ';');
 
                     FOR i IN 1..v_poscnt - 1 LOOP
@@ -850,10 +906,13 @@ dbms_output.put_line('Complete processing passenger ' || v_passenger_no || ' dat
 
                 is ub tax numeric?
 */
-			 -- Temporary rejection of reissued tickets
-			    IF v_fpo_found > 0 THEN
-				    v_error_message := 'ERROR Reissued ticket data, please check and input manually';
-				    RAISE ticket_error;
+			 -- Check reissued tickets
+			    IF v_fpo_found > 0 AND NVL(v_collection_amt,0) > 0 THEN
+					v_ins_published_fare_amt := 0;
+					v_ins_selling_fare_amt := v_selling_fare_amt;
+					v_ins_commission_amt := 0;
+					v_ins_commission_pct := 0;
+					
  			    END IF;
 
                 IF NOT v_void AND v_exchange_found = 0 THEN
@@ -915,14 +974,19 @@ dbms_output.put_line('Complete processing passenger ' || v_passenger_no || ' dat
                 v_ins_ticket_no := v_ticket_no; -- This is original ticket for i= 1
                 v_ins_exch_ticket_no := v_exch_ticket_no; -- This is original exchange ticket for i= 1
 
-                IF v_exchange_found = 1 THEN
+			    IF v_fpo_found > 0 AND (v_collection_amt = 0 OR v_collection_amt IS NULL) THEN
+				    -- Reissue with zero collection amount, ignore this file
+					dbms_output.put_line('INFO File ' || fileToProcess || ' Section ' || v_locator || ' PNR ' || TO_CHAR(v_pnr_no) || ' Tkt ' || TO_CHAR(v_ticket_no) || ' - Reissue with zero collection amount');
+                    v_num_pax := 0;
+                    v_num_tkts := 0;
+                ELSIF v_exchange_found = 1 THEN
                     v_num_tkts := v_num_exchconj_tkts;
                 ELSE
                     v_num_tkts := v_num_conj_tkts;
                 END IF;
 
                 FOR i IN 1..v_num_tkts LOOP
-                    -- i =1 does insert for main ticket
+                    -- i=1 does insert for main ticket
 
                     -- loop through each conjunctive ticket required and insert
                     -- a row for each one
@@ -1100,19 +1164,19 @@ dbms_output.put_line('v_booking_ref            ' || v_booking_ref);
 dbms_output.put_line('v_season                 ' || v_season);
 dbms_output.put_line('v_e_ticket_ind           ' || v_e_ticket_ind);
 dbms_output.put_line('v_ticket_agent           ' || v_ticket_agent);
-dbms_output.put_line('v_ins_commission_amt     ' || v_ins_commission_amt);
-dbms_output.put_line('v_ins_commission_pct     ' || v_ins_commission_pct);
+dbms_output.put_line('v_ins_commission_amt     ' || 0);
+dbms_output.put_line('v_ins_commission_pct     ' || 0);
 dbms_output.put_line('v_ins_selling_fare_amt   ' || v_ins_selling_fare_amt);
-dbms_output.put_line('v_ins_published_fare_amt ' || v_ins_published_fare_amt);
+dbms_output.put_line('v_ins_published_fare_amt ' || 0);
 dbms_output.put_line('v_iata_num               ' || v_iata_num);
 dbms_output.put_line('v_entry_user_id          ' || v_entry_user_id);
 dbms_output.put_line('v_ticket_issue_date      ' || v_ticket_issue_date);
 dbms_output.put_line('v_num_pax                ' || 1);
 dbms_output.put_line('v_passenger_name         ' || v_passenger_name);
-dbms_output.put_line('v_ins_gb_tax_amt         ' || v_ins_gb_tax_amt);
+dbms_output.put_line('v_ins_gb_tax_amt         ' || 0);
 dbms_output.put_line('v_ins_remaining_tax_amt  ' || v_ins_remaining_tax_amt);
-dbms_output.put_line('v_ins_ub_tax_amt         ' || v_ins_ub_tax_amt);
-dbms_output.put_line('v_linked_ticket_no       ' || v_linked_ticket_no);
+dbms_output.put_line('v_ins_ub_tax_amt         ' || 0);
+dbms_output.put_line('v_linked_ticket_no       ' || e_icw_ticket_no);
 dbms_output.put_line('v_ccy_code               ' || v_ccy_code);
 dbms_output.put_line('v_pseudocitycode         ' || v_pseudocitycode);
 dbms_output.put_line('v_passenger_type         ' || v_passenger_type);
@@ -1124,7 +1188,7 @@ dbms_output.put_line('v_tour_code              ' || v_tour_code);
 dbms_output.put_line('v_fare_basis_code        ' || v_fare_basis_code);
 dbms_output.put_line('v_conjunction_ticket_ind ' || v_conjunction_ticket_ind);
 dbms_output.put_line('v_pnr_date               ' || v_pnr_date);
-dbms_output.put_line('v_ins_other_taxes        ' || v_ins_other_taxes);
+dbms_output.put_line('v_ins_other_taxes        ' || 0);
 dbms_output.put_line('v_ticket_type            ' || v_ticket_type);
 dbms_output.put_line('v_group                  ' || v_group);
 dbms_output.put_line('********************************************************************************');

@@ -415,8 +415,6 @@ dbms_output.put_line(TO_CHAR(SYSDATE, 'DD-MON-YYYY HH:MM:SS') || ' Start Of File
         ELSIF SUBSTR(c1_rec.data_text,1,2) = 'K-' OR SUBSTR(c1_rec.data_text,1,3) = 'KN-' OR SUBSTR(c1_rec.data_text,1,3) = 'KS-' THEN
             -- Base, total, net and selling fare data
 			IF v_fpo_found = 0 THEN
-			    -- Not a reissue (this is all of the original code for K-/KN-/KS- from v1.9 but in v2.0 some conditions may now be redundant
-				-- See 'Reissue (new code for v2.0)' below
 				v_locator := 'K-0';
 				IF SUBSTR(c1_rec.data_text,1,2) = 'K-' AND INSTR(c1_rec.data_text,';',1,12)+1 > 12 THEN
 					v_ccy_code := SUBSTR(c1_rec.data_text,INSTR(c1_rec.data_text,';',1,12)+1,3);
@@ -512,7 +510,6 @@ dbms_output.put_line(TO_CHAR(SYSDATE, 'DD-MON-YYYY HH:MM:SS') || ' Start Of File
 				END IF;
 
 			ELSE
-				-- Reissue (new code for v2.0)
 				v_locator := 'K-1';
 				IF SUBSTR(c1_rec.data_text,1,3) = 'K-R' OR (SUBSTR(c1_rec.data_text,1,3) IN ('K-Y','K-W') OR SUBSTR(c1_rec.data_text,1,4) IN ('KS-Y','KS-W')) THEN
 					IF SUBSTR(c1_rec.data_text,1,3) = 'K-R' THEN
