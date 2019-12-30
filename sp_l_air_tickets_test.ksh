@@ -12,6 +12,7 @@
 # Date          Who               Description                                                      #
 # ----------    --------------    -----------                                                      #
 # 23/12/2019    TWilson           Original                                                         #
+# 30/12/2019    TWilson           Revise for SP_L_AIR_TICKETS() now having a testflag parameter    #
 #                                                                                                  #
 ####################################################################################################
 . /Oracle/SECTOR/bin/set_ora_env.ksh
@@ -46,7 +47,7 @@ sqlplus -S -L ${dbuser}/${dbpass} << eof_marker
   set linesize 200
 
   BEGIN  
-    STELLA.SP_L_AIR_TICKETS_TEST('${filename}');
+    STELLA.SP_L_AIR_TICKETS('${filename}','TEST');
   END;
 
 /
