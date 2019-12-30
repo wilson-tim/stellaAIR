@@ -1,4 +1,4 @@
-create or replace PROCEDURE        sp_l_air_tickets (fileToProcess VARCHAR2) AUTHID CURRENT_USER AS 
+create or replace PROCEDURE        sp_l_air_tickets (fileToProcess VARCHAR2, testflag VARCHAR2) AUTHID CURRENT_USER AS 
 -- DECLARE /*****  D E C L A R E  S E C T I O N  *****/
 --===========================================================
 -- sp_l_air_tickets - which takes the contents of AIR files
@@ -181,7 +181,7 @@ BEGIN
 
    -- Prepare for EMD data   
    EXECUTE IMMEDIATE 'TRUNCATE TABLE L_AIR_EMD';
-
+   
 dbms_output.put_line(TO_CHAR(SYSDATE, 'DD-MON-YYYY HH:MM:SS') || ' Start Of File ' || fileToProcess);
 
 -- Check that file is correctly terminated
@@ -213,41 +213,41 @@ dbms_output.put_line(TO_CHAR(SYSDATE, 'DD-MON-YYYY HH:MM:SS') || ' Start Of File
    END;  
 
  -- Reissued ticket?
-	v_locator := '03';
-	BEGIN
-		SELECT 1
-		INTO   v_fpo_found
-		FROM   l_air 
-		WHERE  SUBSTR(data_text,1,3) = 'FPO'; 
-	EXCEPTION
-	WHEN NO_DATA_FOUND THEN
-		NULL;
-	END;  
-	
--- Exchange ticket?	
-	v_locator := '04';
-	BEGIN
-		SELECT 1
-		INTO   v_exchange_found
-		FROM   l_air 
-		WHERE  SUBSTR(data_text,1,2) = 'FO'; 
-	EXCEPTION
-	WHEN NO_DATA_FOUND THEN
-		NULL;
-	END;  
-	
+    v_locator := '03';
+    BEGIN
+        SELECT 1
+        INTO   v_fpo_found
+        FROM   l_air 
+        WHERE  SUBSTR(data_text,1,3) = 'FPO'; 
+    EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+        NULL;
+    END;  
+    
+-- Exchange ticket?    
+    v_locator := '04';
+    BEGIN
+        SELECT 1
+        INTO   v_exchange_found
+        FROM   l_air 
+        WHERE  SUBSTR(data_text,1,2) = 'FO'; 
+    EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+        NULL;
+    END;  
+    
  -- Refund ticket?
-	v_locator := '05';
-	BEGIN
-		SELECT 1
-		INTO   v_rfd_found
-		FROM   l_air 
-		WHERE  SUBSTR(data_text,1,3) = 'RFD'; 
-	EXCEPTION
-	WHEN NO_DATA_FOUND THEN
-		NULL;
-	END;  
-	
+    v_locator := '05';
+    BEGIN
+        SELECT 1
+        INTO   v_rfd_found
+        FROM   l_air 
+        WHERE  SUBSTR(data_text,1,3) = 'RFD'; 
+    EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+        NULL;
+    END;  
+    
 -- First pass (initial checks)
    v_locator := 'LOOP1';
    FOR c1_rec IN c001 LOOP
@@ -263,7 +263,7 @@ dbms_output.put_line(TO_CHAR(SYSDATE, 'DD-MON-YYYY HH:MM:SS') || ' Start Of File
 */
     IF SUBSTR(c1_rec.data_text,1,2) = 'FPO' AND v_exchange_found = 1 THEN
         -- Form of payment data for original issue / exchange / reissue
-		-- There may or may not be a collection amount recorded in this line
+        -- There may or may not be a collection amount recorded in this line
         BEGIN
             v_collection_amt := CASE WHEN INSTR(c1_rec.data_text,'/GBP') > 0 
                                       AND INSTR(c1_rec.data_text,';')    > 0 THEN
@@ -412,152 +412,152 @@ dbms_output.put_line(TO_CHAR(SYSDATE, 'DD-MON-YYYY HH:MM:SS') || ' Start Of File
 */
         ELSIF SUBSTR(c1_rec.data_text,1,2) = 'K-' OR SUBSTR(c1_rec.data_text,1,3) = 'KN-' OR SUBSTR(c1_rec.data_text,1,3) = 'KS-' THEN
             -- Base, total, net and selling fare data
-			IF v_fpo_found = 0 THEN
-			    -- Not a reissue (this is all of the original code for K-/KN-/KS- from v1.9 but in v2.0 some conditions may now be redundant
-				-- See 'Reissue (new code for v2.0)' below
-				v_locator := 'K-0';
-				IF SUBSTR(c1_rec.data_text,1,2) = 'K-' AND INSTR(c1_rec.data_text,';',1,12)+1 > 12 THEN
-					v_ccy_code := SUBSTR(c1_rec.data_text,INSTR(c1_rec.data_text,';',1,12)+1,3);
-				END IF;
+            IF v_fpo_found = 0 THEN
+                -- Not a reissue (this is all of the original code for K-/KN-/KS- from v1.9 but in v2.0 some conditions may now be redundant
+                -- See 'Reissue (new code for v2.0)' below
+                v_locator := 'K-0';
+                IF SUBSTR(c1_rec.data_text,1,2) = 'K-' AND INSTR(c1_rec.data_text,';',1,12)+1 > 12 THEN
+                    v_ccy_code := SUBSTR(c1_rec.data_text,INSTR(c1_rec.data_text,';',1,12)+1,3);
+                END IF;
 
-				IF SUBSTR(c1_rec.data_text,1,3) = 'K-F' THEN
-					v_published_fare_amt := FN_POPULATEFARE(SUBSTR(c1_rec.data_text,1,3),c1_rec.data_text);  
-					v_selling_fare_amt := v_published_fare_amt;
-				ELSIF SUBSTR(c1_rec.data_text,1,4) = 'KN-F' THEN
-					v_selling_fare_amt :=  FN_POPULATEFARE(SUBSTR(c1_rec.data_text,1,4),c1_rec.data_text);
-				ELSIF SUBSTR(c1_rec.data_text,1,3) = 'K-I' OR SUBSTR(c1_rec.data_text,1,3) = 'K-B' THEN
-					v_selling_fare_amt := FN_POPULATEFARE(SUBSTR(c1_rec.data_text,1,3),c1_rec.data_text);  
-					v_published_fare_amt := 0;     
-				ELSIF SUBSTR(c1_rec.data_text,1,4) = 'KN-I' OR SUBSTR(c1_rec.data_text,1,4) = 'KN-B' THEN
-					v_selling_fare_amt := FN_POPULATEFARE(SUBSTR(c1_rec.data_text,1,4),c1_rec.data_text);  
-					v_published_fare_amt := 0;     
-	/*
-	 * EXCHANGE / REISSUE TICKET FARE , WHEN THERE
-	 * IS A ADDITIONAL COLLECTION
-	 * IMPORTANT NOTES :
-	 * Additional collection in FPO line and K- line
-	 * are always represents same amount
-	 * Additional collection in fare = K- fare amt (
-	 * at the end of line ) - (sum of all tax
-	 * changes in KFT- line )
-	 * In other words , additional collection in
-	 * fare line (K-) might represent only tax
-	 * changes
-	 * so find out if there is any tax changes in
-	 * KFT- line than deduct that from fare , which
-	 * is actual fare changes
-	*/
-				ELSIF SUBSTR(c1_rec.data_text,1,3) = 'K-R' THEN
-					-- Published fare reissue
-					v_locator := 'K-R0';
-					BEGIN
-						v_pos1 := INSTR(c1_rec.data_text,';',1,12);
-						v_pos2 := INSTR(c1_rec.data_text,';',1,13);
-						v_published_fare_amt := TO_NUMBER(REGEXP_REPLACE(SUBSTR(c1_rec.data_text, v_pos1+1, v_pos2-v_pos1-1), '[A-Z]', ''));
-					EXCEPTION
-					WHEN OTHERS THEN 
-						core_dataw.sp_errors('AIR_TICKET','K-R',SQLCODE,REGEXP_REPLACE(SUBSTR(c1_rec.data_text, v_pos1+1, v_pos2-v_pos1-1), '[A-Z]', '')
-												   || SQLERRM);
-						v_published_fare_amt := NULL;                              
-					END;
-					IF v_published_fare_amt IS NOT NULL
-					AND v_published_fare_amt != v_collection_amt  THEN
-						v_published_fare_amt := 0;
-					END IF;    
-					v_selling_fare_amt := v_published_fare_amt;
-				--
-				ELSIF SUBSTR(c1_rec.data_text,1,4) = 'KN-R' THEN
-					-- Net remittance reissue
-					v_locator := 'KN-R0';
-					BEGIN
-						v_pos1 := INSTR(c1_rec.data_text,';',1,12);
-						v_pos2 := INSTR(c1_rec.data_text,';',1,13);
-						v_selling_fare_amt := TO_NUMBER(REGEXP_REPLACE(SUBSTR(c1_rec.data_text, v_pos1+1, v_pos2-v_pos1-1), '[A-Z]', ''));
-					EXCEPTION
-					WHEN OTHERS THEN 
-						core_dataw.sp_errors('AIR_TICKET','KN-R',SQLCODE,REGEXP_REPLACE(SUBSTR(c1_rec.data_text, v_pos1+1, v_pos2-v_pos1-1), '[A-Z]', '')
-												   || SQLERRM);
-						v_selling_fare_amt := NULL;                              
-					END;
-					IF v_selling_fare_amt IS NOT NULL
-					AND v_selling_fare_amt != v_collection_amt  THEN
-						v_selling_fare_amt := 0;
-					END IF;    
-				--
-				ELSIF (SUBSTR(c1_rec.data_text,1,3) IN ('K-Y','K-W')  -- BT/IT reissue
-					OR  SUBSTR(c1_rec.data_text,1,4) IN ('KN-Y','KN-W', 'KS-Y','KS-W')) THEN  -- CAT 35 reissue
-					v_locator := 'K-Y0';
-					v_published_fare_amt := 0;
-					BEGIN
-						v_pos12 := INSTR(c1_rec.data_text,';',1,12);
-						v_pos12n := REGEXP_INSTR(c1_rec.data_text, '[0-9]', v_pos12, 1);
-						v_pos13 := INSTR(c1_rec.data_text,';',1,13);
-						v_selling_fare_amt :=  TO_NUMBER(SUBSTR(c1_rec.data_text,    -- from the first numeric after 12th ';' to the position before 13th ';'
-												   v_pos12n, v_pos13 - v_pos12n)); 
-					EXCEPTION
-					WHEN OTHERS THEN 
-						core_dataw.sp_errors('AIR_TICKET','K-Y,W;KN-Y,W;KS-Y,W',SQLCODE,
-							SUBSTR(c1_rec.data_text,    -- from the first numeric after 12th ';' to the position before 13th ';'
-												   v_pos12n, v_pos13 - v_pos12n)
-												   || SQLERRM);
-						v_selling_fare_amt := NULL;                              
-					END;        
-					IF v_selling_fare_amt IS NOT NULL
-					AND v_selling_fare_amt != v_collection_amt  THEN
-						v_selling_fare_amt := 0;
-					END IF; 
+                IF SUBSTR(c1_rec.data_text,1,3) = 'K-F' THEN
+                    v_published_fare_amt := FN_POPULATEFARE(SUBSTR(c1_rec.data_text,1,3),c1_rec.data_text);  
+                    v_selling_fare_amt := v_published_fare_amt;
+                ELSIF SUBSTR(c1_rec.data_text,1,4) = 'KN-F' THEN
+                    v_selling_fare_amt :=  FN_POPULATEFARE(SUBSTR(c1_rec.data_text,1,4),c1_rec.data_text);
+                ELSIF SUBSTR(c1_rec.data_text,1,3) = 'K-I' OR SUBSTR(c1_rec.data_text,1,3) = 'K-B' THEN
+                    v_selling_fare_amt := FN_POPULATEFARE(SUBSTR(c1_rec.data_text,1,3),c1_rec.data_text);  
+                    v_published_fare_amt := 0;     
+                ELSIF SUBSTR(c1_rec.data_text,1,4) = 'KN-I' OR SUBSTR(c1_rec.data_text,1,4) = 'KN-B' THEN
+                    v_selling_fare_amt := FN_POPULATEFARE(SUBSTR(c1_rec.data_text,1,4),c1_rec.data_text);  
+                    v_published_fare_amt := 0;     
+    /*
+     * EXCHANGE / REISSUE TICKET FARE , WHEN THERE
+     * IS A ADDITIONAL COLLECTION
+     * IMPORTANT NOTES :
+     * Additional collection in FPO line and K- line
+     * are always represents same amount
+     * Additional collection in fare = K- fare amt (
+     * at the end of line ) - (sum of all tax
+     * changes in KFT- line )
+     * In other words , additional collection in
+     * fare line (K-) might represent only tax
+     * changes
+     * so find out if there is any tax changes in
+     * KFT- line than deduct that from fare , which
+     * is actual fare changes
+    */
+                ELSIF SUBSTR(c1_rec.data_text,1,3) = 'K-R' THEN
+                    -- Published fare reissue
+                    v_locator := 'K-R0';
+                    BEGIN
+                        v_pos1 := INSTR(c1_rec.data_text,';',1,12);
+                        v_pos2 := INSTR(c1_rec.data_text,';',1,13);
+                        v_published_fare_amt := TO_NUMBER(REGEXP_REPLACE(SUBSTR(c1_rec.data_text, v_pos1+1, v_pos2-v_pos1-1), '[A-Z]', ''));
+                    EXCEPTION
+                    WHEN OTHERS THEN 
+                        core_dataw.sp_errors('AIR_TICKET','K-R',SQLCODE,REGEXP_REPLACE(SUBSTR(c1_rec.data_text, v_pos1+1, v_pos2-v_pos1-1), '[A-Z]', '')
+                                                   || SQLERRM);
+                        v_published_fare_amt := NULL;                              
+                    END;
+                    IF v_published_fare_amt IS NOT NULL
+                    AND v_published_fare_amt != v_collection_amt  THEN
+                        v_published_fare_amt := 0;
+                    END IF;    
+                    v_selling_fare_amt := v_published_fare_amt;
+                --
+                ELSIF SUBSTR(c1_rec.data_text,1,4) = 'KN-R' THEN
+                    -- Net remittance reissue
+                    v_locator := 'KN-R0';
+                    BEGIN
+                        v_pos1 := INSTR(c1_rec.data_text,';',1,12);
+                        v_pos2 := INSTR(c1_rec.data_text,';',1,13);
+                        v_selling_fare_amt := TO_NUMBER(REGEXP_REPLACE(SUBSTR(c1_rec.data_text, v_pos1+1, v_pos2-v_pos1-1), '[A-Z]', ''));
+                    EXCEPTION
+                    WHEN OTHERS THEN 
+                        core_dataw.sp_errors('AIR_TICKET','KN-R',SQLCODE,REGEXP_REPLACE(SUBSTR(c1_rec.data_text, v_pos1+1, v_pos2-v_pos1-1), '[A-Z]', '')
+                                                   || SQLERRM);
+                        v_selling_fare_amt := NULL;                              
+                    END;
+                    IF v_selling_fare_amt IS NOT NULL
+                    AND v_selling_fare_amt != v_collection_amt  THEN
+                        v_selling_fare_amt := 0;
+                    END IF;    
+                --
+                ELSIF (SUBSTR(c1_rec.data_text,1,3) IN ('K-Y','K-W')  -- BT/IT reissue
+                    OR  SUBSTR(c1_rec.data_text,1,4) IN ('KN-Y','KN-W', 'KS-Y','KS-W')) THEN  -- CAT 35 reissue
+                    v_locator := 'K-Y0';
+                    v_published_fare_amt := 0;
+                    BEGIN
+                        v_pos12 := INSTR(c1_rec.data_text,';',1,12);
+                        v_pos12n := REGEXP_INSTR(c1_rec.data_text, '[0-9]', v_pos12, 1);
+                        v_pos13 := INSTR(c1_rec.data_text,';',1,13);
+                        v_selling_fare_amt :=  TO_NUMBER(SUBSTR(c1_rec.data_text,    -- from the first numeric after 12th ';' to the position before 13th ';'
+                                                   v_pos12n, v_pos13 - v_pos12n)); 
+                    EXCEPTION
+                    WHEN OTHERS THEN 
+                        core_dataw.sp_errors('AIR_TICKET','K-Y,W;KN-Y,W;KS-Y,W',SQLCODE,
+                            SUBSTR(c1_rec.data_text,    -- from the first numeric after 12th ';' to the position before 13th ';'
+                                                   v_pos12n, v_pos13 - v_pos12n)
+                                                   || SQLERRM);
+                        v_selling_fare_amt := NULL;                              
+                    END;        
+                    IF v_selling_fare_amt IS NOT NULL
+                    AND v_selling_fare_amt != v_collection_amt  THEN
+                        v_selling_fare_amt := 0;
+                    END IF; 
 
-				END IF;
+                END IF;
 
-			ELSE
-				-- Reissue (new code for v2.0)
-				v_locator := 'K-1';
-				IF SUBSTR(c1_rec.data_text,1,3) = 'K-R' OR (SUBSTR(c1_rec.data_text,1,3) IN ('K-Y','K-W') OR SUBSTR(c1_rec.data_text,1,4) IN ('KS-Y','KS-W')) THEN
-					IF SUBSTR(c1_rec.data_text,1,3) = 'K-R' THEN
-						-- Published fare reissue
-						v_locator := 'K-R1';
-						BEGIN
-							v_pos1 := INSTR(c1_rec.data_text,';',1,12);
-							v_pos2 := INSTR(c1_rec.data_text,';',1,13);
-							v_extracted_amt := TO_NUMBER(REGEXP_REPLACE(SUBSTR(c1_rec.data_text, v_pos1+1, v_pos2-v_pos1-1), '[A-Z]', ''));
-						EXCEPTION
-						WHEN OTHERS THEN 
-							core_dataw.sp_errors('AIR_TICKET','K-R',SQLCODE,REGEXP_REPLACE(SUBSTR(c1_rec.data_text, v_pos1+1, v_pos2-v_pos1-1), '[A-Z]', '')
-													   || SQLERRM);
-							v_extracted_amt := 0;
-						END;
+            ELSE
+                -- Reissue (new code for v2.0)
+                v_locator := 'K-1';
+                IF SUBSTR(c1_rec.data_text,1,3) = 'K-R' OR (SUBSTR(c1_rec.data_text,1,3) IN ('K-Y','K-W') OR SUBSTR(c1_rec.data_text,1,4) IN ('KS-Y','KS-W')) THEN
+                    IF SUBSTR(c1_rec.data_text,1,3) = 'K-R' THEN
+                        -- Published fare reissue
+                        v_locator := 'K-R1';
+                        BEGIN
+                            v_pos1 := INSTR(c1_rec.data_text,';',1,12);
+                            v_pos2 := INSTR(c1_rec.data_text,';',1,13);
+                            v_extracted_amt := TO_NUMBER(REGEXP_REPLACE(SUBSTR(c1_rec.data_text, v_pos1+1, v_pos2-v_pos1-1), '[A-Z]', ''));
+                        EXCEPTION
+                        WHEN OTHERS THEN 
+                            core_dataw.sp_errors('AIR_TICKET','K-R',SQLCODE,REGEXP_REPLACE(SUBSTR(c1_rec.data_text, v_pos1+1, v_pos2-v_pos1-1), '[A-Z]', '')
+                                                       || SQLERRM);
+                            v_extracted_amt := 0;
+                        END;
 
-					ELSIF (SUBSTR(c1_rec.data_text,1,3) IN ('K-Y','K-W')  -- BT/IT reissue
-						OR SUBSTR(c1_rec.data_text,1,4) IN ('KS-Y','KS-W')) THEN  -- CAT 35 reissue
-						v_locator := 'K-Y2';
-						BEGIN
-							v_pos12 := INSTR(c1_rec.data_text,';',1,12);
-							v_pos12n := REGEXP_INSTR(c1_rec.data_text, '[0-9]', v_pos12, 1);
-							v_pos13 := INSTR(c1_rec.data_text,';',1,13);
-							v_extracted_amt :=  TO_NUMBER(SUBSTR(c1_rec.data_text,    -- from the first numeric after 12th ';' to the position before 13th ';'
-													   v_pos12n, v_pos13 - v_pos12n)); 
-						EXCEPTION
-						WHEN OTHERS THEN 
-							core_dataw.sp_errors('AIR_TICKET','K-Y,W;KN-Y,W;KS-Y,W',SQLCODE,
-								SUBSTR(c1_rec.data_text,    -- from the first numeric after 12th ';' to the position before 13th ';'
-													   v_pos12n, v_pos13 - v_pos12n)
-													   || SQLERRM);
-							v_extracted_amt := 0;
-						END;
-						
-					END IF;
+                    ELSIF (SUBSTR(c1_rec.data_text,1,3) IN ('K-Y','K-W')  -- BT/IT reissue
+                        OR SUBSTR(c1_rec.data_text,1,4) IN ('KS-Y','KS-W')) THEN  -- CAT 35 reissue
+                        v_locator := 'K-Y2';
+                        BEGIN
+                            v_pos12 := INSTR(c1_rec.data_text,';',1,12);
+                            v_pos12n := REGEXP_INSTR(c1_rec.data_text, '[0-9]', v_pos12, 1);
+                            v_pos13 := INSTR(c1_rec.data_text,';',1,13);
+                            v_extracted_amt :=  TO_NUMBER(SUBSTR(c1_rec.data_text,    -- from the first numeric after 12th ';' to the position before 13th ';'
+                                                       v_pos12n, v_pos13 - v_pos12n)); 
+                        EXCEPTION
+                        WHEN OTHERS THEN 
+                            core_dataw.sp_errors('AIR_TICKET','K-Y,W;KN-Y,W;KS-Y,W',SQLCODE,
+                                SUBSTR(c1_rec.data_text,    -- from the first numeric after 12th ';' to the position before 13th ';'
+                                                       v_pos12n, v_pos13 - v_pos12n)
+                                                       || SQLERRM);
+                            v_extracted_amt := 0;
+                        END;
+                        
+                    END IF;
 
                     IF v_collection_amt = v_extracted_amt OR (v_extracted_amt != v_collection_amt AND (v_collection_amt = 0 OR v_collection_amt IS NULL)) THEN
-        			    v_collection_amt := v_extracted_amt;
+                        v_collection_amt := v_extracted_amt;
                         v_selling_fare_amt := v_collection_amt;
-					ELSE
-			            v_error_message := 'ERROR Collection amount is ' || v_collection_amt || ' but fare amount is ' || v_extracted_amt || ' please check';
-			            RAISE ticket_error;
-					END IF;
-					
-				END IF;
+                    ELSE
+                        v_error_message := 'ERROR Collection amount is ' || v_collection_amt || ' but fare amount is ' || v_extracted_amt || ' please check';
+                        RAISE ticket_error;
+                    END IF;
+                    
+                END IF;
 
-			END IF;
+            END IF;
 
         ELSIF SUBSTR(c1_rec.data_text,1,3) = 'KFT' OR SUBSTR(c1_rec.data_text,1,3) = 'KNT' OR SUBSTR(c1_rec.data_text,1,3) = 'KST' THEN
             v_locator := 'KxT';
@@ -844,7 +844,7 @@ dbms_output.put_line(TO_CHAR(SYSDATE, 'DD-MON-YYYY HH:MM:SS') || ' Start Of File
             -- Passenger data to be inserted
             IF v_insert_passenger THEN
                 v_locator := 'I-ins';
-/*			
+/*            
 dbms_output.put_line('********************************************************************************');
 dbms_output.put_line('Complete processing passenger ' || v_passenger_no || ' data');
 */
@@ -906,14 +906,14 @@ dbms_output.put_line('Complete processing passenger ' || v_passenger_no || ' dat
 
                 is ub tax numeric?
 */
-			 -- Check reissued tickets
-			    IF v_fpo_found > 0 AND NVL(v_collection_amt,0) > 0 THEN
-					v_ins_published_fare_amt := 0;
-					v_ins_selling_fare_amt := v_selling_fare_amt;
-					v_ins_commission_amt := 0;
-					v_ins_commission_pct := 0;
-					
- 			    END IF;
+             -- Check reissued tickets
+                IF v_fpo_found > 0 AND NVL(v_collection_amt,0) > 0 THEN
+                    v_ins_published_fare_amt := 0;
+                    v_ins_selling_fare_amt := v_selling_fare_amt;
+                    v_ins_commission_amt := 0;
+                    v_ins_commission_pct := 0;
+                    
+                 END IF;
 
                 IF NOT v_void AND v_exchange_found = 0 THEN
                     -- now derive commission amt or commission pct in case both
@@ -974,9 +974,9 @@ dbms_output.put_line('Complete processing passenger ' || v_passenger_no || ' dat
                 v_ins_ticket_no := v_ticket_no; -- This is original ticket for i= 1
                 v_ins_exch_ticket_no := v_exch_ticket_no; -- This is original exchange ticket for i= 1
 
-			    IF v_fpo_found > 0 AND (v_collection_amt = 0 OR v_collection_amt IS NULL) THEN
-				    -- Reissue with zero collection amount, ignore this file
-					dbms_output.put_line('INFO File ' || fileToProcess || ' Section ' || v_locator || ' PNR ' || TO_CHAR(v_pnr_no) || ' Tkt ' || TO_CHAR(v_ticket_no) || ' - Reissue with zero collection amount');
+                IF v_fpo_found > 0 AND (v_collection_amt = 0 OR v_collection_amt IS NULL) THEN
+                    -- Reissue with zero collection amount, ignore this file, reassign v_num_pax to skip insert validation
+                    dbms_output.put_line('INFO File ' || fileToProcess || ' Section ' || v_locator || ' PNR ' || TO_CHAR(v_pnr_no) || ' Tkt ' || TO_CHAR(v_ticket_no) || ' - Reissue with zero collection amount');
                     v_num_pax := 0;
                     v_num_tkts := 0;
                 ELSIF v_exchange_found = 1 THEN
@@ -1027,89 +1027,93 @@ dbms_output.put_line('Complete processing passenger ' || v_passenger_no || ' dat
                     ELSE
                         v_linked_ticket_no := v_ticket_no;
                     END IF;
-/*
-dbms_output.put_line('********************************************************************************');
-dbms_output.put_line('p_stella_get_data.insert_ticket() parameters:');
-dbms_output.put_line('*');
-dbms_output.put_line('v_source_ind             ' || v_source_ind);
-dbms_output.put_line('v_pnr_no                 ' || v_pnr_no);
-dbms_output.put_line('v_departure_date         ' || v_departure_date);
-dbms_output.put_line('v_ins_ticket_no          ' || v_ins_ticket_no);
-dbms_output.put_line('v_airline_num            ' || v_airline_num);
-dbms_output.put_line('v_branch_code            ' || v_branch_code);
-dbms_output.put_line('v_booking_ref            ' || v_booking_ref);
-dbms_output.put_line('v_season                 ' || v_season);
-dbms_output.put_line('v_e_ticket_ind           ' || v_e_ticket_ind);
-dbms_output.put_line('v_ticket_agent           ' || v_ticket_agent);
-dbms_output.put_line('v_ins_commission_amt     ' || v_ins_commission_amt);
-dbms_output.put_line('v_ins_commission_pct     ' || v_ins_commission_pct);
-dbms_output.put_line('v_ins_selling_fare_amt   ' || v_ins_selling_fare_amt);
-dbms_output.put_line('v_ins_published_fare_amt ' || v_ins_published_fare_amt);
-dbms_output.put_line('v_iata_num               ' || v_iata_num);
-dbms_output.put_line('v_entry_user_id          ' || v_entry_user_id);
-dbms_output.put_line('v_ticket_issue_date      ' || v_ticket_issue_date);
-dbms_output.put_line('v_num_pax                ' || 1);
-dbms_output.put_line('v_passenger_name         ' || v_passenger_name);
-dbms_output.put_line('v_ins_gb_tax_amt         ' || v_ins_gb_tax_amt);
-dbms_output.put_line('v_ins_remaining_tax_amt  ' || v_ins_remaining_tax_amt);
-dbms_output.put_line('v_ins_ub_tax_amt         ' || v_ins_ub_tax_amt);
-dbms_output.put_line('v_linked_ticket_no       ' || v_linked_ticket_no);
-dbms_output.put_line('v_ccy_code               ' || v_ccy_code);
-dbms_output.put_line('v_pseudocitycode         ' || v_pseudocitycode);
-dbms_output.put_line('v_passenger_type         ' || v_passenger_type);
-dbms_output.put_line('v_doc_type_code          ' || v_doc_type_code);
-dbms_output.put_line('v_insertorupdate         ' || v_insertorupdate);
-dbms_output.put_line('v_exch_ticket_no         ' || v_ins_exch_ticket_no);
-dbms_output.put_line('v_pnr_id                 ' || '');
-dbms_output.put_line('v_tour_code              ' || v_tour_code);
-dbms_output.put_line('v_fare_basis_code        ' || v_fare_basis_code);
-dbms_output.put_line('v_conjunction_ticket_ind ' || v_conjunction_ticket_ind);
-dbms_output.put_line('v_pnr_date               ' || v_pnr_date);
-dbms_output.put_line('v_ins_other_taxes        ' || v_ins_other_taxes);
-dbms_output.put_line('v_ticket_type            ' || v_ticket_type);
-dbms_output.put_line('v_group                  ' || v_group);
-dbms_output.put_line('********************************************************************************');
-dbms_output.put_line('*');
-*/
-                    v_result :=  p_stella_get_data.insert_ticket(
-                        v_source_ind,
-                        v_pnr_no,
-                        v_departure_date,
-                        v_ins_ticket_no,
-                        v_airline_num,
-                        v_branch_code,
-                        v_booking_ref,
-                        v_season,
-                        v_e_ticket_ind,
-                        v_ticket_agent,
-                        v_ins_commission_amt,
-                        v_ins_commission_pct,
-                        v_ins_selling_fare_amt,
-                        v_ins_published_fare_amt,
-                        v_iata_num,
-                        v_entry_user_id,
-                        v_ticket_issue_date,
-                        1, -- num pax
-                        v_passenger_name,
-                        v_ins_gb_tax_amt,
-                        v_ins_remaining_tax_amt,
-                        v_ins_ub_tax_amt,
-                        v_linked_ticket_no,
-                        v_ccy_code,
-                        v_pseudocitycode,
-                        v_passenger_type,
-                        v_doc_type_code,
-                        v_insertorupdate,
-                        v_ins_exch_ticket_no,
-                        NULL, -- pnr id
-                        v_tour_code,
-                        v_fare_basis_code,
-                        v_conjunction_ticket_ind,
-                        v_pnr_date,
-                        v_ins_other_taxes,
-                        v_ticket_type,
-                        v_group
-                    );
+
+                    IF NVL(testflag,'XXXX') = 'TEST' THEN
+                        dbms_output.put_line('********************************************************************************');
+                        dbms_output.put_line('p_stella_get_data.insert_ticket() parameters:');
+                        dbms_output.put_line('*');
+                        dbms_output.put_line('v_source_ind             ' || v_source_ind);
+                        dbms_output.put_line('v_pnr_no                 ' || v_pnr_no);
+                        dbms_output.put_line('v_departure_date         ' || v_departure_date);
+                        dbms_output.put_line('v_ins_ticket_no          ' || v_ins_ticket_no);
+                        dbms_output.put_line('v_airline_num            ' || v_airline_num);
+                        dbms_output.put_line('v_branch_code            ' || v_branch_code);
+                        dbms_output.put_line('v_booking_ref            ' || v_booking_ref);
+                        dbms_output.put_line('v_season                 ' || v_season);
+                        dbms_output.put_line('v_e_ticket_ind           ' || v_e_ticket_ind);
+                        dbms_output.put_line('v_ticket_agent           ' || v_ticket_agent);
+                        dbms_output.put_line('v_ins_commission_amt     ' || v_ins_commission_amt);
+                        dbms_output.put_line('v_ins_commission_pct     ' || v_ins_commission_pct);
+                        dbms_output.put_line('v_ins_selling_fare_amt   ' || v_ins_selling_fare_amt);
+                        dbms_output.put_line('v_ins_published_fare_amt ' || v_ins_published_fare_amt);
+                        dbms_output.put_line('v_iata_num               ' || v_iata_num);
+                        dbms_output.put_line('v_entry_user_id          ' || v_entry_user_id);
+                        dbms_output.put_line('v_ticket_issue_date      ' || v_ticket_issue_date);
+                        dbms_output.put_line('v_num_pax                ' || 1);
+                        dbms_output.put_line('v_passenger_name         ' || v_passenger_name);
+                        dbms_output.put_line('v_ins_gb_tax_amt         ' || v_ins_gb_tax_amt);
+                        dbms_output.put_line('v_ins_remaining_tax_amt  ' || v_ins_remaining_tax_amt);
+                        dbms_output.put_line('v_ins_ub_tax_amt         ' || v_ins_ub_tax_amt);
+                        dbms_output.put_line('v_linked_ticket_no       ' || v_linked_ticket_no);
+                        dbms_output.put_line('v_ccy_code               ' || v_ccy_code);
+                        dbms_output.put_line('v_pseudocitycode         ' || v_pseudocitycode);
+                        dbms_output.put_line('v_passenger_type         ' || v_passenger_type);
+                        dbms_output.put_line('v_doc_type_code          ' || v_doc_type_code);
+                        dbms_output.put_line('v_insertorupdate         ' || v_insertorupdate);
+                        dbms_output.put_line('v_exch_ticket_no         ' || v_ins_exch_ticket_no);
+                        dbms_output.put_line('v_pnr_id                 ' || '');
+                        dbms_output.put_line('v_tour_code              ' || v_tour_code);
+                        dbms_output.put_line('v_fare_basis_code        ' || v_fare_basis_code);
+                        dbms_output.put_line('v_conjunction_ticket_ind ' || v_conjunction_ticket_ind);
+                        dbms_output.put_line('v_pnr_date               ' || v_pnr_date);
+                        dbms_output.put_line('v_ins_other_taxes        ' || v_ins_other_taxes);
+                        dbms_output.put_line('v_ticket_type            ' || v_ticket_type);
+                        dbms_output.put_line('v_group                  ' || v_group);
+                        dbms_output.put_line('********************************************************************************');
+                        dbms_output.put_line('*');
+                        
+                        v_result := '';
+                    ELSE
+                        v_result :=  p_stella_get_data.insert_ticket(
+                            v_source_ind,
+                            v_pnr_no,
+                            v_departure_date,
+                            v_ins_ticket_no,
+                            v_airline_num,
+                            v_branch_code,
+                            v_booking_ref,
+                            v_season,
+                            v_e_ticket_ind,
+                            v_ticket_agent,
+                            v_ins_commission_amt,
+                            v_ins_commission_pct,
+                            v_ins_selling_fare_amt,
+                            v_ins_published_fare_amt,
+                            v_iata_num,
+                            v_entry_user_id,
+                            v_ticket_issue_date,
+                            1, -- num pax
+                            v_passenger_name,
+                            v_ins_gb_tax_amt,
+                            v_ins_remaining_tax_amt,
+                            v_ins_ub_tax_amt,
+                            v_linked_ticket_no,
+                            v_ccy_code,
+                            v_pseudocitycode,
+                            v_passenger_type,
+                            v_doc_type_code,
+                            v_insertorupdate,
+                            v_ins_exch_ticket_no,
+                            NULL, -- pnr id
+                            v_tour_code,
+                            v_fare_basis_code,
+                            v_conjunction_ticket_ind,
+                            v_pnr_date,
+                            v_ins_other_taxes,
+                            v_ticket_type,
+                            v_group
+                        );
+                    END IF;
 
                     IF v_result IS NOT NULL THEN
                         IF SUBSTR(v_result, 1, 11) = 'Error, (fk)' THEN
@@ -1147,97 +1151,101 @@ dbms_output.put_line('*');
                                         v_ticket_no,
                                         v_group,
                                         v_booking_ref,
-										e_icw_ticket_no;
+                                        e_icw_ticket_no;
 
                                     EXIT WHEN C002%NOTFOUND;
-/*
-dbms_output.put_line('********************************************************************************');
-dbms_output.put_line('p_stella_get_data.insert_ticket() parameters:');
-dbms_output.put_line('*');
-dbms_output.put_line('v_source_ind             ' || v_source_ind);
-dbms_output.put_line('v_pnr_no                 ' || v_pnr_no);
-dbms_output.put_line('v_departure_date         ' || v_departure_date);
-dbms_output.put_line('v_ins_ticket_no          ' || v_ticket_no);
-dbms_output.put_line('v_airline_num            ' || v_airline_num);
-dbms_output.put_line('v_branch_code            ' || v_branch_code);
-dbms_output.put_line('v_booking_ref            ' || v_booking_ref);
-dbms_output.put_line('v_season                 ' || v_season);
-dbms_output.put_line('v_e_ticket_ind           ' || v_e_ticket_ind);
-dbms_output.put_line('v_ticket_agent           ' || v_ticket_agent);
-dbms_output.put_line('v_ins_commission_amt     ' || 0);
-dbms_output.put_line('v_ins_commission_pct     ' || 0);
-dbms_output.put_line('v_ins_selling_fare_amt   ' || v_ins_selling_fare_amt);
-dbms_output.put_line('v_ins_published_fare_amt ' || 0);
-dbms_output.put_line('v_iata_num               ' || v_iata_num);
-dbms_output.put_line('v_entry_user_id          ' || v_entry_user_id);
-dbms_output.put_line('v_ticket_issue_date      ' || v_ticket_issue_date);
-dbms_output.put_line('v_num_pax                ' || 1);
-dbms_output.put_line('v_passenger_name         ' || v_passenger_name);
-dbms_output.put_line('v_ins_gb_tax_amt         ' || 0);
-dbms_output.put_line('v_ins_remaining_tax_amt  ' || v_ins_remaining_tax_amt);
-dbms_output.put_line('v_ins_ub_tax_amt         ' || 0);
-dbms_output.put_line('v_linked_ticket_no       ' || e_icw_ticket_no);
-dbms_output.put_line('v_ccy_code               ' || v_ccy_code);
-dbms_output.put_line('v_pseudocitycode         ' || v_pseudocitycode);
-dbms_output.put_line('v_passenger_type         ' || v_passenger_type);
-dbms_output.put_line('v_doc_type_code          ' || v_doc_type_code);
-dbms_output.put_line('v_insertorupdate         ' || v_insertorupdate);
-dbms_output.put_line('v_exch_ticket_no         ' || '');
-dbms_output.put_line('v_pnr_id                 ' || '');
-dbms_output.put_line('v_tour_code              ' || v_tour_code);
-dbms_output.put_line('v_fare_basis_code        ' || v_fare_basis_code);
-dbms_output.put_line('v_conjunction_ticket_ind ' || v_conjunction_ticket_ind);
-dbms_output.put_line('v_pnr_date               ' || v_pnr_date);
-dbms_output.put_line('v_ins_other_taxes        ' || 0);
-dbms_output.put_line('v_ticket_type            ' || v_ticket_type);
-dbms_output.put_line('v_group                  ' || v_group);
-dbms_output.put_line('********************************************************************************');
-dbms_output.put_line('*');
-*/
-									v_result :=  p_stella_get_data.insert_ticket(
-										v_source_ind,
-										v_pnr_no,
-										v_departure_date,
-										v_ticket_no,
-										v_airline_num,
-										v_branch_code,
-										v_booking_ref,
-										v_season,
-										v_e_ticket_ind,
-										v_ticket_agent,
-										0, --v_ins_commission_amt,
-										0, --v_ins_commission_pct,
-										v_ins_selling_fare_amt,
-										0, --v_ins_published_fare_amt,
-										v_iata_num,
-										v_entry_user_id,
-										v_ticket_issue_date,
-										1, -- num pax
-										v_passenger_name,
-										0, --v_ins_gb_tax_amt,
-										v_ins_remaining_tax_amt,
-										0, --v_ins_ub_tax_amt,
-										e_icw_ticket_no, --v_linked_ticket_no,
-										v_ccy_code,
-										v_pseudocitycode,
-										v_passenger_type,
-										v_doc_type_code,
-										v_insertorupdate,
-										NULL, -- exchange ticket no
-										NULL, -- pnr id
-										v_tour_code,
-										v_fare_basis_code,
-										v_conjunction_ticket_ind,
-										v_pnr_date,
-										0, --v_ins_other_taxes,
-										v_ticket_type,
-										v_group
-									);
+
+                                    IF NVL(testflag,'XXXX') = 'TEST' THEN
+                                        dbms_output.put_line('********************************************************************************');
+                                        dbms_output.put_line('p_stella_get_data.insert_ticket() parameters:');
+                                        dbms_output.put_line('*');
+                                        dbms_output.put_line('v_source_ind             ' || v_source_ind);
+                                        dbms_output.put_line('v_pnr_no                 ' || v_pnr_no);
+                                        dbms_output.put_line('v_departure_date         ' || v_departure_date);
+                                        dbms_output.put_line('v_ins_ticket_no          ' || v_ticket_no);
+                                        dbms_output.put_line('v_airline_num            ' || v_airline_num);
+                                        dbms_output.put_line('v_branch_code            ' || v_branch_code);
+                                        dbms_output.put_line('v_booking_ref            ' || v_booking_ref);
+                                        dbms_output.put_line('v_season                 ' || v_season);
+                                        dbms_output.put_line('v_e_ticket_ind           ' || v_e_ticket_ind);
+                                        dbms_output.put_line('v_ticket_agent           ' || v_ticket_agent);
+                                        dbms_output.put_line('v_ins_commission_amt     ' || 0);
+                                        dbms_output.put_line('v_ins_commission_pct     ' || 0);
+                                        dbms_output.put_line('v_ins_selling_fare_amt   ' || v_ins_selling_fare_amt);
+                                        dbms_output.put_line('v_ins_published_fare_amt ' || 0);
+                                        dbms_output.put_line('v_iata_num               ' || v_iata_num);
+                                        dbms_output.put_line('v_entry_user_id          ' || v_entry_user_id);
+                                        dbms_output.put_line('v_ticket_issue_date      ' || v_ticket_issue_date);
+                                        dbms_output.put_line('v_num_pax                ' || 1);
+                                        dbms_output.put_line('v_passenger_name         ' || v_passenger_name);
+                                        dbms_output.put_line('v_ins_gb_tax_amt         ' || 0);
+                                        dbms_output.put_line('v_ins_remaining_tax_amt  ' || v_ins_remaining_tax_amt);
+                                        dbms_output.put_line('v_ins_ub_tax_amt         ' || 0);
+                                        dbms_output.put_line('v_linked_ticket_no       ' || e_icw_ticket_no);
+                                        dbms_output.put_line('v_ccy_code               ' || v_ccy_code);
+                                        dbms_output.put_line('v_pseudocitycode         ' || v_pseudocitycode);
+                                        dbms_output.put_line('v_passenger_type         ' || v_passenger_type);
+                                        dbms_output.put_line('v_doc_type_code          ' || v_doc_type_code);
+                                        dbms_output.put_line('v_insertorupdate         ' || v_insertorupdate);
+                                        dbms_output.put_line('v_exch_ticket_no         ' || '');
+                                        dbms_output.put_line('v_pnr_id                 ' || '');
+                                        dbms_output.put_line('v_tour_code              ' || v_tour_code);
+                                        dbms_output.put_line('v_fare_basis_code        ' || v_fare_basis_code);
+                                        dbms_output.put_line('v_conjunction_ticket_ind ' || v_conjunction_ticket_ind);
+                                        dbms_output.put_line('v_pnr_date               ' || v_pnr_date);
+                                        dbms_output.put_line('v_ins_other_taxes        ' || 0);
+                                        dbms_output.put_line('v_ticket_type            ' || v_ticket_type);
+                                        dbms_output.put_line('v_group                  ' || v_group);
+                                        dbms_output.put_line('********************************************************************************');
+                                        dbms_output.put_line('*');
+
+                                        v_result := '';
+                                    ELSE
+                                        v_result :=  p_stella_get_data.insert_ticket(
+                                            v_source_ind,
+                                            v_pnr_no,
+                                            v_departure_date,
+                                            v_ticket_no,
+                                            v_airline_num,
+                                            v_branch_code,
+                                            v_booking_ref,
+                                            v_season,
+                                            v_e_ticket_ind,
+                                            v_ticket_agent,
+                                            0, --v_ins_commission_amt,
+                                            0, --v_ins_commission_pct,
+                                            v_ins_selling_fare_amt,
+                                            0, --v_ins_published_fare_amt,
+                                            v_iata_num,
+                                            v_entry_user_id,
+                                            v_ticket_issue_date,
+                                            1, -- num pax
+                                            v_passenger_name,
+                                            0, --v_ins_gb_tax_amt,
+                                            v_ins_remaining_tax_amt,
+                                            0, --v_ins_ub_tax_amt,
+                                            e_icw_ticket_no, --v_linked_ticket_no,
+                                            v_ccy_code,
+                                            v_pseudocitycode,
+                                            v_passenger_type,
+                                            v_doc_type_code,
+                                            v_insertorupdate,
+                                            NULL, -- exchange ticket no
+                                            NULL, -- pnr id
+                                            v_tour_code,
+                                            v_fare_basis_code,
+                                            v_conjunction_ticket_ind,
+                                            v_pnr_date,
+                                            0, --v_ins_other_taxes,
+                                            v_ticket_type,
+                                            v_group
+                                        );
+                                    END IF;
 
                                     IF v_result IS NOT NULL THEN
                                         IF SUBSTR(v_result, 1, 11) = 'Error, (fk)' THEN
-											v_error_message := v_result || ', retry next run';
-											RAISE ticket_error;
+                                            v_error_message := v_result || ', retry next run';
+                                            RAISE ticket_error;
                                         ELSIF SUBSTR(v_result, 1, 6) = 'Error ' OR SUBSTR(v_result, 1, 6) = 'Error,' THEN
                                             v_error_message := 'insert_ticket() failed, file moved to error area';
                                             RAISE ticket_error;
@@ -1524,19 +1532,19 @@ EXCEPTION
   -- PNR and ticket number validated and if necessary error raised by insert_ticket()
   --
     WHEN already_loaded THEN   
-		dbms_output.put_line('ERROR File ' || fileToProcess || ' already loaded - ' || SQLERRM);
+        dbms_output.put_line('ERROR File ' || fileToProcess || ' already loaded - ' || SQLERRM);
         core_dataw.sp_errors('AIR_TICKET','AIR_TICKET',SQLCODE,'ERROR File ' || fileToProcess || ' already loaded - ' || SQLERRM);
-	WHEn missing_eof THEN
-		dbms_output.put_line('ERROR File: ' || fileToProcess || ', missing END of file indicator');
+    WHEn missing_eof THEN
+        dbms_output.put_line('ERROR File: ' || fileToProcess || ', missing END of file indicator');
         core_dataw.sp_errors('AIR_TICKET','FILE',-20000, 'ERROR File: ' || fileToProcess || ', missing END of file indicator');
     WHEN ticket_error THEN
-		dbms_output.put_line('ERROR File ' || fileToProcess || ' Section ' || v_locator || ' PNR ' || TO_CHAR(v_pnr_no) || ' Tkt ' || TO_CHAR(v_ticket_no) || ' ' || v_error_message || ' - ' || SQLERRM);
+        dbms_output.put_line('ERROR File ' || fileToProcess || ' Section ' || v_locator || ' PNR ' || TO_CHAR(v_pnr_no) || ' Tkt ' || TO_CHAR(v_ticket_no) || ' ' || v_error_message || ' - ' || SQLERRM);
         core_dataw.sp_errors('AIR_TICKET','AIR_TICKET',SQLCODE,'ERROR File ' || fileToProcess || ' Section ' || v_locator || ' PNR ' || TO_CHAR(v_pnr_no) || ' Tkt ' || TO_CHAR(v_ticket_no) || ' ' || v_error_message || ' - ' || SQLERRM);
     WHEN emd_error THEN
-		dbms_output.put_line('ERROR File ' || fileToProcess || ' Section ' || v_locator || ' PNR ' || TO_CHAR(v_pnr_no) || ' Tkt ' || TO_CHAR(v_ticket_no) || ' ' || v_error_message || ' - ' || SQLERRM);
+        dbms_output.put_line('ERROR File ' || fileToProcess || ' Section ' || v_locator || ' PNR ' || TO_CHAR(v_pnr_no) || ' Tkt ' || TO_CHAR(v_ticket_no) || ' ' || v_error_message || ' - ' || SQLERRM);
         core_dataw.sp_errors('AIR_TICKET','EMD',SQLCODE,'ERROR File ' || fileToProcess || ' Section ' || v_locator || ' PNR ' || TO_CHAR(v_pnr_no) || ' Tkt ' || TO_CHAR(v_ticket_no) || ' ' || v_error_message || ' - ' || SQLERRM);
     WHEN OTHERS THEN
-		dbms_output.put_line('ERROR File ' || fileToProcess || ' Section ' || v_locator || ' PNR ' || TO_CHAR(v_pnr_no) || ' Tkt ' || TO_CHAR(v_ticket_no) || ' - ' || SQLERRM);
+        dbms_output.put_line('ERROR File ' || fileToProcess || ' Section ' || v_locator || ' PNR ' || TO_CHAR(v_pnr_no) || ' Tkt ' || TO_CHAR(v_ticket_no) || ' - ' || SQLERRM);
         core_dataw.sp_errors('AIR_TICKET','AIR_TICKET',SQLCODE,'ERROR File ' || fileToProcess || ' Section ' || v_locator || ' PNR ' || TO_CHAR(v_pnr_no) || ' Tkt ' || TO_CHAR(v_ticket_no) || ' - ' || SQLERRM);
   --    
 END sp_l_air_tickets;
