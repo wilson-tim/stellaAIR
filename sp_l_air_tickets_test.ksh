@@ -1,7 +1,7 @@
 #!/bin/ksh
 #set -x
 ####################################################################################################
-# timtest.ksh  script to test run SP_L_AIR_TICKETS()                                               #
+# sp_l_air_tickets_test.ksh  script to run SP_L_AIR_TICKETS_TEST()                                 #
 #                                                                                                  #
 # Parameter 1   :   filename (file must be in ${data_path}/airfiles directory)                     #
 #                                                                                                  #
@@ -11,7 +11,7 @@
 #                                                                                                  #
 # Date          Who               Description                                                      #
 # ----------    --------------    -----------                                                      #
-# 11/11/2019    TWilson           Original                                                         #
+# 23/12/2019    TWilson           Original                                                         #
 #                                                                                                  #
 ####################################################################################################
 . /Oracle/SECTOR/bin/set_ora_env.ksh
