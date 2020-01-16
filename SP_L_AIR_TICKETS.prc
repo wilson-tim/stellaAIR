@@ -19,6 +19,7 @@ create or replace PROCEDURE        sp_l_air_tickets (fileToProcess VARCHAR2, tes
 -- 16-Dec-19     1.8 TWilson  Deployment bug fixes
 -- 20-Dec-19     1.9 TWilson  Processing for reissued tickets 
 -- 30-Dec-19     2.0 TWilson  Processing for reissued tickets, second attempt
+-- 15-Jan-20     2.1 TWilson  Assign sp_errors() p_abbrev parameter value dependent upon filename
 --
 -- @"I:\MI\Data Warehouse\Tim\MI-2672\SP_L_AIR_TICKETS_1.1.prc";
 --
@@ -106,6 +107,7 @@ v_foreign_key_error       CHAR(1);
 v_primary_key_error       CHAR(1);
 v_locator                 VARCHAR2(10);
 --
+v_err_abbrev              VARCHAR2(10);
 v_bkgref_check            VARCHAR2(10):='';
 v_bkgref_consistent       BOOLEAN:=False;
 v_chunk                   VARCHAR2(200);
@@ -181,7 +183,7 @@ BEGIN
 
    -- Prepare for EMD data   
    EXECUTE IMMEDIATE 'TRUNCATE TABLE L_AIR_EMD';
-   
+
 dbms_output.put_line(TO_CHAR(SYSDATE, 'DD-MON-YYYY HH:MM:SS') || ' Start Of File ' || fileToProcess);
 
 -- Check that file is correctly terminated
@@ -223,7 +225,7 @@ dbms_output.put_line(TO_CHAR(SYSDATE, 'DD-MON-YYYY HH:MM:SS') || ' Start Of File
     WHEN NO_DATA_FOUND THEN
         NULL;
     END;  
-    
+
 -- Exchange ticket?    
     v_locator := '04';
     BEGIN
@@ -235,7 +237,7 @@ dbms_output.put_line(TO_CHAR(SYSDATE, 'DD-MON-YYYY HH:MM:SS') || ' Start Of File
     WHEN NO_DATA_FOUND THEN
         NULL;
     END;  
-    
+
  -- Refund ticket?
     v_locator := '05';
     BEGIN
@@ -248,6 +250,15 @@ dbms_output.put_line(TO_CHAR(SYSDATE, 'DD-MON-YYYY HH:MM:SS') || ' Start Of File
         NULL;
     END;  
     
+-- Assign sp_errors() p_abbrev parameter value dependent upon filename
+    IF REGEXP_LIKE(filetoprocess, '^spec[0-9]+\.AIR$','i') THEN
+        v_err_abbrev := 'SPECAIR';
+    ELSIF REGEXP_LIKE(filetoprocess, '^[0-9]+\.AIR$','i') THEN
+        v_err_abbrev := 'FLEXAIR';
+    ELSE
+        v_err_abbrev := 'OTHRAIR';
+    END IF;
+
 -- First pass (initial checks)
    v_locator := 'LOOP1';
    FOR c1_rec IN c001 LOOP
@@ -279,7 +290,7 @@ dbms_output.put_line(TO_CHAR(SYSDATE, 'DD-MON-YYYY HH:MM:SS') || ' Start Of File
                                 END ;
         EXCEPTION
         WHEN OTHERS THEN 
-            core_dataw.sp_errors('AIR_TICKET','FPO',SQLCODE,'Collection amount ' || SUBSTR(c1_rec.data_text,INSTR(c1_rec.data_text,'/GBP')+4)|| SQLERRM);
+            core_dataw.sp_errors(v_err_abbrev,'FPO',SQLCODE,'Collection amount ' || SUBSTR(c1_rec.data_text,INSTR(c1_rec.data_text,'/GBP')+4)|| SQLERRM);
             v_collection_amt := 0;
         END;  
     END IF;
@@ -313,7 +324,7 @@ dbms_output.put_line(TO_CHAR(SYSDATE, 'DD-MON-YYYY HH:MM:SS') || ' Start Of File
                                      END;         
         EXCEPTION 
         WHEN OTHERS THEN 
-            core_dataw.sp_errors('AIR_TICKET','MUC1A',SQLCODE,'Pseudo city code ' || SUBSTR(c1_rec.data_text,1,50) || ' - ' || SQLERRM);
+            core_dataw.sp_errors(v_err_abbrev,'MUC1A',SQLCODE,'Pseudo city code ' || SUBSTR(c1_rec.data_text,1,50) || ' - ' || SQLERRM);
             RAISE;
         END;
 
@@ -332,7 +343,7 @@ dbms_output.put_line(TO_CHAR(SYSDATE, 'DD-MON-YYYY HH:MM:SS') || ' Start Of File
                                           ,'RRMMDD');
             EXCEPTION
             WHEN OTHERS THEN
-                core_dataw.sp_errors('AIR_TICKET','D-',SQLCODE,'Ticket issue date ' || SUBSTR(c1_rec.data_text,17,6) || ' - ' || SQLERRM);
+                core_dataw.sp_errors(v_err_abbrev,'D-',SQLCODE,'Ticket issue date ' || SUBSTR(c1_rec.data_text,17,6) || ' - ' || SQLERRM);
                 RAISE;
             END;
             BEGIN
@@ -341,7 +352,7 @@ dbms_output.put_line(TO_CHAR(SYSDATE, 'DD-MON-YYYY HH:MM:SS') || ' Start Of File
                                           ,'RRMMDD');  
             EXCEPTION
             WHEN OTHERS THEN
-                core_dataw.sp_errors('AIR_TICKET','D-',SQLCODE,'PNR date ' || SUBSTR(c1_rec.data_text,3,6) || ' - ' || SQLERRM);
+                core_dataw.sp_errors(v_err_abbrev,'D-',SQLCODE,'PNR date ' || SUBSTR(c1_rec.data_text,3,6) || ' - ' || SQLERRM);
                 RAISE;
             END;
 
@@ -363,7 +374,7 @@ dbms_output.put_line(TO_CHAR(SYSDATE, 'DD-MON-YYYY HH:MM:SS') || ' Start Of File
                 END IF;
             EXCEPTION
             WHEN OTHERS THEN 
-                core_dataw.sp_errors('AIR_TICKET','H-',SQLCODE, 'Departure date ' || SUBSTR(c1_rec.data_text,INSTR(c1_rec.data_text,';',1,5)+16,5) || ' - ' || SQLERRM);
+                core_dataw.sp_errors(v_err_abbrev,'H-',SQLCODE, 'Departure date ' || SUBSTR(c1_rec.data_text,INSTR(c1_rec.data_text,';',1,5)+16,5) || ' - ' || SQLERRM);
                 RAISE;
             END;
 
@@ -384,7 +395,7 @@ dbms_output.put_line(TO_CHAR(SYSDATE, 'DD-MON-YYYY HH:MM:SS') || ' Start Of File
                                     END;
             EXCEPTION 
             WHEN OTHERS THEN 
-                core_dataw.sp_errors('AIR_TICKET','H-',SQLCODE,'Season ' || v_season || ' (Departure date ' || v_departure_date || ') - ' || SQLERRM);
+                core_dataw.sp_errors(v_err_abbrev,'H-',SQLCODE,'Season ' || v_season || ' (Departure date ' || v_departure_date || ') - ' || SQLERRM);
                 RAISE;
             END;
 
@@ -456,7 +467,7 @@ dbms_output.put_line(TO_CHAR(SYSDATE, 'DD-MON-YYYY HH:MM:SS') || ' Start Of File
                         v_published_fare_amt := TO_NUMBER(REGEXP_REPLACE(SUBSTR(c1_rec.data_text, v_pos1+1, v_pos2-v_pos1-1), '[A-Z]', ''));
                     EXCEPTION
                     WHEN OTHERS THEN 
-                        core_dataw.sp_errors('AIR_TICKET','K-R',SQLCODE,REGEXP_REPLACE(SUBSTR(c1_rec.data_text, v_pos1+1, v_pos2-v_pos1-1), '[A-Z]', '')
+                        core_dataw.sp_errors(v_err_abbrev,'K-R',SQLCODE,REGEXP_REPLACE(SUBSTR(c1_rec.data_text, v_pos1+1, v_pos2-v_pos1-1), '[A-Z]', '')
                                                    || SQLERRM);
                         v_published_fare_amt := NULL;                              
                     END;
@@ -475,7 +486,7 @@ dbms_output.put_line(TO_CHAR(SYSDATE, 'DD-MON-YYYY HH:MM:SS') || ' Start Of File
                         v_selling_fare_amt := TO_NUMBER(REGEXP_REPLACE(SUBSTR(c1_rec.data_text, v_pos1+1, v_pos2-v_pos1-1), '[A-Z]', ''));
                     EXCEPTION
                     WHEN OTHERS THEN 
-                        core_dataw.sp_errors('AIR_TICKET','KN-R',SQLCODE,REGEXP_REPLACE(SUBSTR(c1_rec.data_text, v_pos1+1, v_pos2-v_pos1-1), '[A-Z]', '')
+                        core_dataw.sp_errors(v_err_abbrev,'KN-R',SQLCODE,REGEXP_REPLACE(SUBSTR(c1_rec.data_text, v_pos1+1, v_pos2-v_pos1-1), '[A-Z]', '')
                                                    || SQLERRM);
                         v_selling_fare_amt := NULL;                              
                     END;
@@ -496,7 +507,7 @@ dbms_output.put_line(TO_CHAR(SYSDATE, 'DD-MON-YYYY HH:MM:SS') || ' Start Of File
                                                    v_pos12n, v_pos13 - v_pos12n)); 
                     EXCEPTION
                     WHEN OTHERS THEN 
-                        core_dataw.sp_errors('AIR_TICKET','K-Y,W;KN-Y,W;KS-Y,W',SQLCODE,
+                        core_dataw.sp_errors(v_err_abbrev,'K-Y,W;KN-Y,W;KS-Y,W',SQLCODE,
                             SUBSTR(c1_rec.data_text,    -- from the first numeric after 12th ';' to the position before 13th ';'
                                                    v_pos12n, v_pos13 - v_pos12n)
                                                    || SQLERRM);
@@ -522,7 +533,7 @@ dbms_output.put_line(TO_CHAR(SYSDATE, 'DD-MON-YYYY HH:MM:SS') || ' Start Of File
                             v_extracted_amt := TO_NUMBER(REGEXP_REPLACE(SUBSTR(c1_rec.data_text, v_pos1+1, v_pos2-v_pos1-1), '[A-Z]', ''));
                         EXCEPTION
                         WHEN OTHERS THEN 
-                            core_dataw.sp_errors('AIR_TICKET','K-R',SQLCODE,REGEXP_REPLACE(SUBSTR(c1_rec.data_text, v_pos1+1, v_pos2-v_pos1-1), '[A-Z]', '')
+                            core_dataw.sp_errors(v_err_abbrev,'K-R',SQLCODE,REGEXP_REPLACE(SUBSTR(c1_rec.data_text, v_pos1+1, v_pos2-v_pos1-1), '[A-Z]', '')
                                                        || SQLERRM);
                             v_extracted_amt := 0;
                         END;
@@ -538,13 +549,13 @@ dbms_output.put_line(TO_CHAR(SYSDATE, 'DD-MON-YYYY HH:MM:SS') || ' Start Of File
                                                        v_pos12n, v_pos13 - v_pos12n)); 
                         EXCEPTION
                         WHEN OTHERS THEN 
-                            core_dataw.sp_errors('AIR_TICKET','K-Y,W;KN-Y,W;KS-Y,W',SQLCODE,
+                            core_dataw.sp_errors(v_err_abbrev,'K-Y,W;KN-Y,W;KS-Y,W',SQLCODE,
                                 SUBSTR(c1_rec.data_text,    -- from the first numeric after 12th ';' to the position before 13th ';'
                                                        v_pos12n, v_pos13 - v_pos12n)
                                                        || SQLERRM);
                             v_extracted_amt := 0;
                         END;
-                        
+
                     END IF;
 
                     IF v_collection_amt = v_extracted_amt OR (v_extracted_amt != v_collection_amt AND (v_collection_amt = 0 OR v_collection_amt IS NULL)) THEN
@@ -554,7 +565,7 @@ dbms_output.put_line(TO_CHAR(SYSDATE, 'DD-MON-YYYY HH:MM:SS') || ' Start Of File
                         v_error_message := 'ERROR Collection amount is ' || v_collection_amt || ' but fare amount is ' || v_extracted_amt || ' please check';
                         RAISE ticket_error;
                     END IF;
-                    
+
                 END IF;
 
             END IF;
@@ -656,7 +667,7 @@ dbms_output.put_line(TO_CHAR(SYSDATE, 'DD-MON-YYYY HH:MM:SS') || ' Start Of File
                 END IF;
             EXCEPTION
             WHEN OTHERS THEN
-                core_dataw.sp_errors('AIR_TICKET','M-',SQLCODE,'Fare basis code ' || c1_rec.data_text || ' - ' || SQLERRM);
+                core_dataw.sp_errors(v_err_abbrev,'M-',SQLCODE,'Fare basis code ' || c1_rec.data_text || ' - ' || SQLERRM);
                 RAISE;
             END;
 
@@ -912,7 +923,7 @@ dbms_output.put_line('Complete processing passenger ' || v_passenger_no || ' dat
                     v_ins_selling_fare_amt := v_selling_fare_amt;
                     v_ins_commission_amt := 0;
                     v_ins_commission_pct := 0;
-                    
+
                  END IF;
 
                 IF NOT v_void AND v_exchange_found = 0 THEN
@@ -977,6 +988,7 @@ dbms_output.put_line('Complete processing passenger ' || v_passenger_no || ' dat
                 IF v_fpo_found > 0 AND (v_collection_amt = 0 OR v_collection_amt IS NULL) THEN
                     -- Reissue with zero collection amount, ignore this file, reassign v_num_pax to skip insert validation
                     dbms_output.put_line('INFO File ' || fileToProcess || ' Section ' || v_locator || ' PNR ' || TO_CHAR(v_pnr_no) || ' Tkt ' || TO_CHAR(v_ticket_no) || ' - Reissue with zero collection amount');
+                    core_dataw.sp_errors(v_err_abbrev,'AIR_TICKET',0,'INFO File ' || fileToProcess || ' Section ' || v_locator || ' PNR ' || TO_CHAR(v_pnr_no) || ' Tkt ' || TO_CHAR(v_ticket_no) || ' - Reissue with zero collection amount');
                     v_num_pax := 0;
                     v_num_tkts := 0;
                 ELSIF v_exchange_found = 1 THEN
@@ -1071,7 +1083,7 @@ dbms_output.put_line('Complete processing passenger ' || v_passenger_no || ' dat
                         dbms_output.put_line('v_group                  ' || v_group);
                         dbms_output.put_line('********************************************************************************');
                         dbms_output.put_line('*');
-                        
+
                         v_result := '';
                     ELSE
                         v_result :=  p_stella_get_data.insert_ticket(
@@ -1533,19 +1545,18 @@ EXCEPTION
   --
     WHEN already_loaded THEN   
         dbms_output.put_line('ERROR File ' || fileToProcess || ' already loaded - ' || SQLERRM);
-        core_dataw.sp_errors('AIR_TICKET','AIR_TICKET',SQLCODE,'ERROR File ' || fileToProcess || ' already loaded - ' || SQLERRM);
-    WHEn missing_eof THEN
+        core_dataw.sp_errors(v_err_abbrev,'AIR_TICKET',SQLCODE,'ERROR File ' || fileToProcess || ' already loaded - ' || SQLERRM);
+    WHEN missing_eof THEN
         dbms_output.put_line('ERROR File: ' || fileToProcess || ', missing END of file indicator');
-        core_dataw.sp_errors('AIR_TICKET','FILE',-20000, 'ERROR File: ' || fileToProcess || ', missing END of file indicator');
+        core_dataw.sp_errors(v_err_abbrev,'FILE',-20000, 'ERROR File: ' || fileToProcess || ', missing END of file indicator');
     WHEN ticket_error THEN
         dbms_output.put_line('ERROR File ' || fileToProcess || ' Section ' || v_locator || ' PNR ' || TO_CHAR(v_pnr_no) || ' Tkt ' || TO_CHAR(v_ticket_no) || ' ' || v_error_message || ' - ' || SQLERRM);
-        core_dataw.sp_errors('AIR_TICKET','AIR_TICKET',SQLCODE,'ERROR File ' || fileToProcess || ' Section ' || v_locator || ' PNR ' || TO_CHAR(v_pnr_no) || ' Tkt ' || TO_CHAR(v_ticket_no) || ' ' || v_error_message || ' - ' || SQLERRM);
+        core_dataw.sp_errors(v_err_abbrev,'AIR_TICKET',SQLCODE,'ERROR File ' || fileToProcess || ' Section ' || v_locator || ' PNR ' || TO_CHAR(v_pnr_no) || ' Tkt ' || TO_CHAR(v_ticket_no) || ' ' || v_error_message || ' - ' || SQLERRM);
     WHEN emd_error THEN
         dbms_output.put_line('ERROR File ' || fileToProcess || ' Section ' || v_locator || ' PNR ' || TO_CHAR(v_pnr_no) || ' Tkt ' || TO_CHAR(v_ticket_no) || ' ' || v_error_message || ' - ' || SQLERRM);
-        core_dataw.sp_errors('AIR_TICKET','EMD',SQLCODE,'ERROR File ' || fileToProcess || ' Section ' || v_locator || ' PNR ' || TO_CHAR(v_pnr_no) || ' Tkt ' || TO_CHAR(v_ticket_no) || ' ' || v_error_message || ' - ' || SQLERRM);
+        core_dataw.sp_errors(v_err_abbrev,'EMD',SQLCODE,'ERROR File ' || fileToProcess || ' Section ' || v_locator || ' PNR ' || TO_CHAR(v_pnr_no) || ' Tkt ' || TO_CHAR(v_ticket_no) || ' ' || v_error_message || ' - ' || SQLERRM);
     WHEN OTHERS THEN
         dbms_output.put_line('ERROR File ' || fileToProcess || ' Section ' || v_locator || ' PNR ' || TO_CHAR(v_pnr_no) || ' Tkt ' || TO_CHAR(v_ticket_no) || ' - ' || SQLERRM);
-        core_dataw.sp_errors('AIR_TICKET','AIR_TICKET',SQLCODE,'ERROR File ' || fileToProcess || ' Section ' || v_locator || ' PNR ' || TO_CHAR(v_pnr_no) || ' Tkt ' || TO_CHAR(v_ticket_no) || ' - ' || SQLERRM);
+        core_dataw.sp_errors(v_err_abbrev,'AIR_TICKET',SQLCODE,'ERROR File ' || fileToProcess || ' Section ' || v_locator || ' PNR ' || TO_CHAR(v_pnr_no) || ' Tkt ' || TO_CHAR(v_ticket_no) || ' - ' || SQLERRM);
   --    
 END sp_l_air_tickets;
-/
