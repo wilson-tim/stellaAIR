@@ -29,11 +29,11 @@ filename=${1}
 
 echo "Load file ${filename}"
 
-sqlldr ${dbuser}/${dbpass} control=${ctl_path}/air.ctl data=${data_path}/airfiles/${filename} log=${load_log_path}/${filename}_test.log 
+sqlldr ${dbuser}/${dbpass} control=${ctl_path}/air.ctl data=${data_path}/airfiles/${filename} log=${load_log_path}/test_${filename}.log 
 
-echo "Truncate table INTEGRATION_ERRORS"
+#echo "Truncate table INTEGRATION_ERRORS"
 
-echo "TRUNCATE TABLE STELLA.INTEGRATION_ERRORS;"|sqlplus -s $dbuser/$dbpass
+#echo "TRUNCATE TABLE STELLA.INTEGRATION_ERRORS;"|sqlplus -s $dbuser/$dbpass
 
 echo "Truncate table L_AIR_EMD"
 
@@ -48,6 +48,8 @@ sqlplus -S -L ${dbuser}/${dbpass} << eof_marker
 
   BEGIN  
     STELLA.SP_L_AIR_TICKETS('${filename}','TEST');
+    --STELLA.SP_L_AIR_TICKETS('${filename}','');
+    --COMMIT;
   END;
 
 /
