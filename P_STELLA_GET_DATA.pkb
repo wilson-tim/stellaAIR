@@ -877,6 +877,7 @@
     v_group                VARCHAR2(3);  -- Group may 1, 2 or 3 characters
     v_parameters           VARCHAR2(2000);
     v_count                NUMBER(5) := 0;
+    v_reccount             NUMBER(5) := 0;
     v_spec_pseudo_list     VARCHAR2(200);
 
   BEGIN
@@ -987,6 +988,19 @@
     IF NOT app_util.is_number(p_airline_num) THEN
       v_error_statement := 'Error, airline num is not numeric';
       RAISE ex_data_invalid;
+    END IF;
+
+    -- Create default airline record if airline number is not found
+    SELECT COUNT(*)
+    INTO v_reccount
+    FROM AIRLINE
+    WHERE AIRLINE_NUM = p_airline_num;
+    IF v_reccount = 0 THEN
+      BEGIN
+        INSERT INTO AIRLINE (AIRLINE_NUM, AIRLINE_CODE, AIRLINE_NAME)
+        VALUES (p_airline_num, 'ZZ', 'AIRLINE ' || TO_CHAR(p_airline_num));
+        dbms_output.put_line('INFO Airline ' || TO_CHAR(p_airline_num) || ' created, please check');
+      END;
     END IF;
 
     IF p_ticket_no IS NULL THEN

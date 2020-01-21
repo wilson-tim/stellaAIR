@@ -989,8 +989,9 @@ dbms_output.put_line('Complete processing passenger ' || v_passenger_no || ' dat
 
                 IF v_fpo_found > 0 AND (v_collection_amt = 0 OR v_collection_amt IS NULL) THEN
                     -- Reissue with zero collection amount, ignore this file, reassign v_num_pax to skip insert validation
-                    dbms_output.put_line('INFO File ' || fileToProcess || ' Section ' || v_locator || ' PNR ' || TO_CHAR(v_pnr_no) || ' Tkt ' || TO_CHAR(v_ticket_no) || ' - Reissue with zero collection amount');
-                    core_dataw.sp_errors(v_err_abbrev,'AIR_TICKET',0,'INFO File ' || fileToProcess || ' Section ' || v_locator || ' PNR ' || TO_CHAR(v_pnr_no) || ' Tkt ' || TO_CHAR(v_ticket_no) || ' - Reissue with zero collection amount');
+                    -- Bash script greps "^INFO " and not "^INFO2" messages
+                    dbms_output.put_line('INFO2 File ' || fileToProcess || ' Section ' || v_locator || ' PNR ' || TO_CHAR(v_pnr_no) || ' Tkt ' || TO_CHAR(v_ticket_no) || ' - Reissue with zero collection amount, file not processed');
+                    core_dataw.sp_errors(v_err_abbrev,'AIR_TICKET',0,'INFO2 File ' || fileToProcess || ' Section ' || v_locator || ' PNR ' || TO_CHAR(v_pnr_no) || ' Tkt ' || TO_CHAR(v_ticket_no) || ' - Reissue with zero collection amount, file not processed');
                     v_num_pax := 0;
                     v_num_tkts := 0;
                 ELSIF v_exchange_found = 1 THEN
