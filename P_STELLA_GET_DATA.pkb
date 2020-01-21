@@ -1,4 +1,8 @@
-create or replace PACKAGE BODY        p_stella_get_data IS
+--------------------------------------------------------
+--  DDL for Package Body P_STELLA_GET_DATA
+--------------------------------------------------------
+
+  CREATE OR REPLACE PACKAGE BODY "STELLA"."P_STELLA_GET_DATA" IS
 
 --========================================================================================================================
 -- Package P_STELLA_GET_DATA
@@ -31,46 +35,6 @@ create or replace PACKAGE BODY        p_stella_get_data IS
   ----------------------------------------------------------------
   ----------------------------------------------------------------
 
-  FUNCTION run_mir_load(driverclass    VARCHAR2,
-                        connectionurl  VARCHAR2,
-                        dbuserid       VARCHAR2,
-                        dbuserpwd      VARCHAR2,
-                        singlefilename VARCHAR2,
-                        runmode        VARCHAR2) RETURN CHAR AS
-    LANGUAGE JAVA NAME 'uk.co.firstchoice.stella.StellaMIRLoad.runLoad(
-     java.lang.String,
-     java.lang.String,
-     java.lang.String,
-     java.lang.String,
-     java.lang.String,
-     java.lang.String
-     )
-     return java.lang.String';
-
-
-  ----------------------------------------------------------------
-  ----------------------------------------------------------------
-  -- new V1.08 JR,  Airload changes
-
-  FUNCTION run_air_load(driverclass    VARCHAR2,
-                        connectionurl  VARCHAR2,
-                        dbuserid       VARCHAR2,
-                        dbuserpwd      VARCHAR2,
-                        singlefilename VARCHAR2,
-                        runmode        VARCHAR2) RETURN CHAR AS
-    LANGUAGE JAVA NAME 'uk.co.firstchoice.stella.StellaAIRLoad.runLoad(
-     java.lang.String,
-     java.lang.String,
-     java.lang.String,
-     java.lang.String,
-     java.lang.String,
-     java.lang.String
-     )
-     return java.lang.String';
-
-
-  ----------------------------------------------------------------
-  ----------------------------------------------------------------
   FUNCTION get_first_departure_date(p_pnr_id IN NUMBER) RETURN DATE IS
 
     v_result DATE;
@@ -919,7 +883,7 @@ create or replace PACKAGE BODY        p_stella_get_data IS
 
     p_pnr_id    := p_pnr_id_1;
     g_statement := 10;
-    -- dbms_output.put_line('Src:'||p_source_ind||' P:'||v_proc_name||' strt:'||to_char(sysdate,'dd-mon-yy hh24:mi:ss'));
+--  dbms_output.put_line('Src:'||p_source_ind||' P:'||v_proc_name||' strt:'||to_char(sysdate,'dd-mon-yy hh24:mi:ss'));
     p_common.debug_message('Src:' || p_source_ind || ' Proc:' || v_proc_name ||
                            ' started:' ||
                            to_char(SYSDATE, 'dd-mon-yy hh24:mi:ss'));
@@ -1009,10 +973,12 @@ create or replace PACKAGE BODY        p_stella_get_data IS
         RAISE ex_data_invalid;
       END IF;
     END IF;
+    
     IF NOT app_util.is_number(p_booking_reference_no) THEN
       v_error_statement := 'Error, booking ref is not numeric';
       RAISE ex_data_invalid;
     END IF;
+    
     IF p_airline_num IS NULL THEN
       v_error_statement := 'Error, airline is blank';
       RAISE ex_data_invalid;
@@ -1022,6 +988,7 @@ create or replace PACKAGE BODY        p_stella_get_data IS
       v_error_statement := 'Error, airline num is not numeric';
       RAISE ex_data_invalid;
     END IF;
+
     IF p_ticket_no IS NULL THEN
       v_error_statement := 'Error, ticket no is blank';
       RAISE ex_data_invalid;
@@ -1056,7 +1023,7 @@ create or replace PACKAGE BODY        p_stella_get_data IS
     END IF;
     IF p_selling_fare_amt IS NULL OR
        NOT app_util.is_number(p_selling_fare_amt) THEN
-      v_error_statement := 'Error,  selling amt null/not numeric';
+      v_error_statement := 'Error, selling amt null/not numeric';
       RAISE ex_data_invalid;
     END IF;
 
@@ -1073,7 +1040,7 @@ create or replace PACKAGE BODY        p_stella_get_data IS
 
     IF p_remaining_tax_amt IS NULL OR
        NOT app_util.is_number(p_remaining_tax_amt) THEN
-      v_error_statement := 'Error,  remaining_tax amt null/not numeric';
+      v_error_statement := 'Error, remaining_tax amt null/not numeric';
       RAISE ex_data_invalid;
     END IF;
 
@@ -1267,8 +1234,7 @@ create or replace PACKAGE BODY        p_stella_get_data IS
         END IF;
       ELSE
         -- don't change season in pnr table if tickets are voided from air
---        dbms_output.put_line('p_source_ind: ' || p_source_ind || '/' ||
---                             p_passenger_name || '.');
+--        dbms_output.put_line('p_source_ind: ' || p_source_ind || '/' || p_passenger_name || '.');
         IF ((p_source_ind = 'AL' AND p_passenger_name = 'VOID') AND
            p_source_ind <> 'OL') THEN
           v_voided_air := 'Y';
@@ -1302,7 +1268,7 @@ create or replace PACKAGE BODY        p_stella_get_data IS
 
     END IF;
 
-    --dbms_output.put_line('seas:'||v_season);
+--  dbms_output.put_line('seas:'||v_season);
 
     IF p_doc_type_code = 'GAL' OR p_source_ind = 'ML' THEN
       v_crs_code := 'GAL';
@@ -1700,7 +1666,7 @@ create or replace PACKAGE BODY        p_stella_get_data IS
       dbms_output.put_line('Excp others, state:' || g_statement ||
                              ' param:' || v_parameters);
 
-      v_error_statement := 'ERROR State:' || to_number(g_statement) ||
+      v_error_statement := 'Error, state:' || to_number(g_statement) ||
                            ' Param:' || v_parameters;
 
       p_common.debug_message(v_error_statement || ' ' || g_sqlcode);
@@ -1746,8 +1712,6 @@ create or replace PACKAGE BODY        p_stella_get_data IS
       END IF;
 
       p_common.debug_message(v_error_statement);
-      dbms_output.put_line(v_error_statement);
-
       RETURN 'Error, ' || v_error_statement;
 
   END insert_ticket;
@@ -2866,7 +2830,7 @@ create or replace PACKAGE BODY        p_stella_get_data IS
     EXCEPTION
       WHEN dup_val_on_index THEN
         ROLLBACK;
-        RETURN 'Error, SYSTEM ERROR that refund letter id (' || p_refund_letter_id || ')already exists';
+        RETURN 'Error, SYSTEM ERROR that refund letter id (' || p_refund_letter_id || ') already exists';
 
     END; -- insert block
 
@@ -3107,9 +3071,11 @@ create or replace PACKAGE BODY        p_stella_get_data IS
        WHERE b.branch_code = bg.branch_code
          AND b.season_type = bg.season_type
          AND b.season_year = bg.season_year
-         AND bg.group_code IN ('A', 'L', 'S', 'M', 'C', 'P', 'W', 'U', 'J','X','Y','Z');
+         AND bg.group_code IN ('A', 'L', 'S', 'M', 'C', 'P', 'W', 'U', 'J', 'X', 'Y', 'Z');
 
     RETURN(v_result);
   END get_specialist_branchlist; -- end function
 
 END p_stella_get_data; -- end of package body
+
+/

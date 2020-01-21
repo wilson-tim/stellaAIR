@@ -1,4 +1,8 @@
-create or replace PACKAGE p_stella_get_data IS
+--------------------------------------------------------
+--  DDL for Package P_STELLA_GET_DATA
+--------------------------------------------------------
+
+  CREATE OR REPLACE PACKAGE "STELLA"."P_STELLA_GET_DATA" IS
   -- Author  : leigh ashton
   -- Created : 03/01/03
   -- Purpose : Defines the procedures and functions for the Stella system
@@ -29,30 +33,6 @@ create or replace PACKAGE p_stella_get_data IS
   -- LA v1.05 added refund letter stuff
   -- LA v1.07 added reasons for refund docs
   ----------------------------------------------------------------
-
-  -- run_mir_load is the call specification to the java Stored procedure
-  -- uk.co.firstchoice.stella.StellaMIRLoad.runLoad
-  -- It loads tickets from source files in file system
-  -- The routine
-  -- is configured via the application registry (JUTIL.APPLICATION_REGISTRY)
-  FUNCTION run_mir_load(driverclass    VARCHAR2,
-                        connectionurl  VARCHAR2,
-                        dbuserid       VARCHAR2,
-                        dbuserpwd      VARCHAR2,
-                        singlefilename VARCHAR2,
-                        runmode        VARCHAR2) RETURN CHAR;
-
-  ----------------------------------------------------------------
-  ----------------------------------------------------------------
-
-  -- run air load is the call specification to the java Stored procedure
-  -- uk.co.firstchoice.stella.StellaAIRLoad.runLoad
-  FUNCTION run_air_load(driverclass    VARCHAR2,
-                        connectionurl  VARCHAR2,
-                        dbuserid       VARCHAR2,
-                        dbuserpwd      VARCHAR2,
-                        singlefilename VARCHAR2,
-                        runmode        VARCHAR2) RETURN CHAR;
 
   ----------------------------------------------------------------
   ----------------------------------------------------------------
@@ -361,3 +341,5 @@ create or replace PACKAGE p_stella_get_data IS
   TYPE g_list_tab_t IS TABLE OF g_list_element_type;
 
 END p_stella_get_data; -- end of package HEADER
+
+/

@@ -20,6 +20,7 @@ create or replace PROCEDURE        sp_l_air_tickets (fileToProcess VARCHAR2, tes
 -- 20-Dec-19     1.9 TWilson  Processing for reissued tickets 
 -- 30-Dec-19     2.0 TWilson  Processing for reissued tickets, second attempt
 -- 15-Jan-20     2.1 TWilson  Assign sp_errors() p_abbrev parameter value dependent upon filename
+-- 21-Jan-20     2.2 TWilson  Bug fixes
 --
 -- @"I:\MI\Data Warehouse\Tim\MI-2672\SP_L_AIR_TICKETS_1.1.prc";
 --
@@ -40,6 +41,7 @@ PRAGMA EXCEPTION_INIT(foreign_key_error, -02291);
 missing_eof       EXCEPTION;
 already_loaded    EXCEPTION;
 ticket_error      EXCEPTION;
+ticket_warning    EXCEPTION;
 emd_error         EXCEPTION;
 --
 --
@@ -1129,10 +1131,10 @@ dbms_output.put_line('Complete processing passenger ' || v_passenger_no || ' dat
 
                     IF v_result IS NOT NULL THEN
                         IF SUBSTR(v_result, 1, 11) = 'Error, (fk)' THEN
-                            v_error_message := v_result || ', retry next run';
-                            RAISE ticket_error;
+                            v_error_message := v_result || ', please correct and retry next run';
+                            RAISE ticket_warning;
                         ELSIF SUBSTR(v_result, 1, 6) = 'Error ' OR SUBSTR(v_result, 1, 6) = 'Error,' THEN
-                            v_error_message := 'insert_ticket() failed, file moved to error area';
+                            v_error_message := v_result || ', insert_ticket() failed, file moved to error area';
                             RAISE ticket_error;
                         END IF;
                     ELSE
@@ -1256,10 +1258,10 @@ dbms_output.put_line('Complete processing passenger ' || v_passenger_no || ' dat
 
                                     IF v_result IS NOT NULL THEN
                                         IF SUBSTR(v_result, 1, 11) = 'Error, (fk)' THEN
-                                            v_error_message := v_result || ', retry next run';
-                                            RAISE ticket_error;
+                                            v_error_message := v_result || ', please correct and retry next run';
+                                            RAISE ticket_warning;
                                         ELSIF SUBSTR(v_result, 1, 6) = 'Error ' OR SUBSTR(v_result, 1, 6) = 'Error,' THEN
-                                            v_error_message := 'insert_ticket() failed, file moved to error area';
+                                            v_error_message := v_result || ', insert_ticket() failed, file moved to error area';
                                             RAISE ticket_error;
                                         END IF;
                                     ELSE
@@ -1552,6 +1554,9 @@ EXCEPTION
     WHEN ticket_error THEN
         dbms_output.put_line('ERROR File ' || fileToProcess || ' Section ' || v_locator || ' PNR ' || TO_CHAR(v_pnr_no) || ' Tkt ' || TO_CHAR(v_ticket_no) || ' ' || v_error_message || ' - ' || SQLERRM);
         core_dataw.sp_errors(v_err_abbrev,'AIR_TICKET',SQLCODE,'ERROR File ' || fileToProcess || ' Section ' || v_locator || ' PNR ' || TO_CHAR(v_pnr_no) || ' Tkt ' || TO_CHAR(v_ticket_no) || ' ' || v_error_message || ' - ' || SQLERRM);
+    WHEN ticket_warning THEN
+        dbms_output.put_line('WARNING File ' || fileToProcess || ' Section ' || v_locator || ' PNR ' || TO_CHAR(v_pnr_no) || ' Tkt ' || TO_CHAR(v_ticket_no) || ' ' || v_error_message || ' - ' || SQLERRM);
+        core_dataw.sp_errors(v_err_abbrev,'AIR_TICKET',SQLCODE,'WARNING File ' || fileToProcess || ' Section ' || v_locator || ' PNR ' || TO_CHAR(v_pnr_no) || ' Tkt ' || TO_CHAR(v_ticket_no) || ' ' || v_error_message || ' - ' || SQLERRM);
     WHEN emd_error THEN
         dbms_output.put_line('ERROR File ' || fileToProcess || ' Section ' || v_locator || ' PNR ' || TO_CHAR(v_pnr_no) || ' Tkt ' || TO_CHAR(v_ticket_no) || ' ' || v_error_message || ' - ' || SQLERRM);
         core_dataw.sp_errors(v_err_abbrev,'EMD',SQLCODE,'ERROR File ' || fileToProcess || ' Section ' || v_locator || ' PNR ' || TO_CHAR(v_pnr_no) || ' Tkt ' || TO_CHAR(v_ticket_no) || ' ' || v_error_message || ' - ' || SQLERRM);
