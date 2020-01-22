@@ -792,20 +792,24 @@ dbms_output.put_line(TO_CHAR(SYSDATE, 'DD-MON-YYYY HH:MM:SS') || ' Start Of File
                 e_ticket_no := SUBSTR(c1_rec.data_text, v_pos1 + 1, v_pos2 - v_pos1 - 1);
 
                 v_pos1 := INSTR(c1_rec.data_text, ';', 1, 2);
-                e_doc_id := SUBSTR(c1_rec.data_text, v_pos1 + 1);
-
-                BEGIN
-                    UPDATE L_AIR_EMD
-                        SET
-                            AIRLINE_NUM = e_airline_num,
-                            TICKET_NO = e_ticket_no
-                    WHERE DOC_ID = e_doc_id;
-                EXCEPTION
-                    WHEN OTHERS THEN
-                        v_error_message := 'error updating EMD airline and ticket data in table L_AIR_EMD';
-                        RAISE emd_error;
-                END;
-                COMMIT;
+                IF v_pos1 > 0 THEN
+                    e_doc_id := SUBSTR(c1_rec.data_text, v_pos1 + 1);
+                    BEGIN
+                        UPDATE L_AIR_EMD
+                            SET
+                                AIRLINE_NUM = e_airline_num,
+                                TICKET_NO = e_ticket_no
+                        WHERE DOC_ID = e_doc_id;
+                    EXCEPTION
+                        WHEN OTHERS THEN
+                            v_error_message := 'error updating EMD airline and ticket data in table L_AIR_EMD';
+                            RAISE emd_error;
+                    END;
+                    COMMIT;
+                ELSE
+                    v_error_message := 'EMD document ID is missing in TMCD line';
+                    RAISE emd_error;
+                END IF;
 
             END IF;
 
